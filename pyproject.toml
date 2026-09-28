@@ -1,0 +1,23 @@
+[project]
+name = "octavus"
+version = "0.1.0"
+description = "An octopus that learns to move and hunt through reinforcement learning"
+readme = "README.md"
+authors = [
+    { name = "VictorAraujopy" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "gymnasium[mujoco]>=1.3.0",
+    "mujoco>=3.14.0",
+    "torch>=2.14.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = ["brain_octavus", "world_octavus"]
+module-root = ""
+namespace = true

@@ -1,0 +1,16 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Local notes for the coding assistant (not part of the project)
+CLAUDE.md
+
+# Trained model checkpoints
+*.pt

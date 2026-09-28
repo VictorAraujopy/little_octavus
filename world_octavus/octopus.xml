@@ -1,0 +1,102 @@
+<!--
+  Octavus's body and the sea floor, in MuJoCo's MJCF format.
+
+  The octopus has 8 arms. Each arm has 2 segments and 4 motors:
+    shoulder_swing - swings the arm sideways (sweeps forward/back)
+    shoulder_lift  - lifts the whole arm off the floor or pushes it down
+    elbow          - bends the tip up/down
+    sucker         - sticks the tip to whatever it is touching (floor, crab)
+  Plus a touch sensor on the tip. In total: 32 motors and 8 touch sensors.
+  Mantle, web, eyes and the curled tip are visual only: no mass, no collision.
+
+  View it (from the project root; the path must be absolute, hence $PWD):
+    uv run python -m mujoco.viewer --mjcf="$PWD/world_octavus/octopus.xml"
+-->
+<mujoco model="octavus">
+  <compiler angle="degree" autolimits="true"/>
+
+  <option timestep="0.005" integrator="implicitfast" gravity="0 0 -4" density="1000" viscosity="0.001"/>
+
+  <visual>
+    <rgba haze="0.05 0.25 0.35 1" fog="0.03 0.18 0.26 1"/>
+    <map fogstart="1.5" fogend="7"/>
+    <quality shadowsize="4096"/>
+  </visual>
+
+  <asset>
+    <texture name="water" type="skybox" builtin="gradient" rgb1="0.1 0.4 0.55" rgb2="0.01 0.06 0.1" width="512" height="512"/>
+    <texture name="sand" type="2d" builtin="checker" rgb1="0.78 0.71 0.52" rgb2="0.72 0.65 0.47" width="512" height="512"/>
+    <material name="sand" texture="sand" texrepeat="12 12"/>
+    <material name="skin" rgba="0.85 0.33 0.25 1"/>
+    <material name="tip" rgba="0.9 0.42 0.33 1"/>
+    <material name="sucker" rgba="1 0.8 0.72 1"/>
+    <material name="eye" rgba="0.95 0.93 0.8 1"/>
+    <material name="pupil" rgba="0.05 0.05 0.05 1"/>
+  </asset>
+
+  <default>
+    <geom material="skin" contype="2" conaffinity="1" friction="1.2 0.02 0.01"/>
+    <joint damping="0.5" armature="0.01"/>
+    <default class="muscle">
+      <position kp="40" kv="1" forcerange="-25 25" inheritrange="1"/>
+    </default>
+    <default class="visual">
+      <geom contype="0" conaffinity="0" density="0"/>
+    </default>
+  </default>
+
+  <worldbody>
+    <light pos="0 0 6" dir="0 0 -1" directional="true" diffuse="0.55 0.7 0.8" castshadow="true"/>
+    <geom name="floor" type="plane" size="0 0 0.05" material="sand" contype="1" conaffinity="1"/>
+
+    <body name="target" mocap="true" pos="2 0 0.005">
+      <geom class="visual" type="cylinder" size="0.12 0.005" rgba="1 0.25 0.2 0.7"/>
+    </body>
+
+    <body name="torso" pos="0 0 0.3">
+      <freejoint name="root"/>
+      <camera name="follow" mode="trackcom" pos="0 -1.8 1.1" xyaxes="1 0 0 0 0.53 0.848"/>
+      <geom name="head" type="sphere" size="0.12"/>
+      <geom name="mantle" class="visual" type="ellipsoid" size="0.15 0.13 0.2" pos="-0.1 0 0.14" euler="0 -35 0"/>
+      <geom name="web" class="visual" type="ellipsoid" size="0.2 0.2 0.035" pos="0 0 -0.07"/>
+      <geom class="visual" material="eye" type="sphere" size="0.042" pos="0.04 0.085 0.085"/>
+      <geom class="visual" material="eye" type="sphere" size="0.042" pos="0.04 -0.085 0.085"/>
+      <geom class="visual" material="pupil" type="ellipsoid" size="0.02 0.007 0.007" pos="0.055 0.11 0.11"/>
+      <geom class="visual" material="pupil" type="ellipsoid" size="0.02 0.007 0.007" pos="0.055 -0.11 0.11"/>
+
+      <replicate count="8" euler="0 0 45">
+        <body name="arm" pos="0.0924 0.0383 -0.05" euler="0 0 22.5">
+          <joint name="shoulder_swing" axis="0 0 1" range="-30 30"/>
+          <joint name="shoulder_lift" axis="0 1 0" range="-35 35"/>
+          <geom type="capsule" fromto="0 0 0 0.25 0 -0.09" size="0.045"/>
+          <body name="tip" pos="0.25 0 -0.09" euler="0 6 0">
+            <joint name="elbow" axis="0 1 0" range="-40 40"/>
+            <geom material="tip" type="capsule" fromto="0 0 0 0.3 0 0" size="0.03"/>
+            <site name="touch" type="capsule" fromto="0 0 0 0.3 0 0" size="0.035" rgba="0 0 0 0"/>
+            <geom class="visual" material="tip" type="capsule" fromto="0 0 0 0.12 0 0" size="0.037"/>
+            <geom class="visual" material="tip" type="capsule" fromto="0.3 0 0 0.38 0 0.012" size="0.025"/>
+            <geom class="visual" material="tip" type="capsule" fromto="0.38 0 0.012 0.44 0 0.045" size="0.021"/>
+            <geom class="visual" material="tip" type="capsule" fromto="0.44 0 0.045 0.47 0 0.095" size="0.017"/>
+            <geom class="visual" material="tip" type="capsule" fromto="0.47 0 0.095 0.455 0 0.14" size="0.014"/>
+            <geom class="visual" material="tip" type="capsule" fromto="0.455 0 0.14 0.415 0 0.16" size="0.011"/>
+            <geom class="visual" material="tip" type="capsule" fromto="0.415 0 0.16 0.385 0 0.14" size="0.008"/>
+            <geom class="visual" material="sucker" type="sphere" size="0.01" pos="0.432 0 0.062"/>
+            <geom class="visual" material="sucker" type="sphere" size="0.009" pos="0.45 0 0.1"/>
+            <geom class="visual" material="sucker" type="sphere" size="0.007" pos="0.438 0 0.13"/>
+          </body>
+        </body>
+      </replicate>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position class="muscle" name="shoulder_swing" joint="shoulder_swing"/>
+    <position class="muscle" name="shoulder_lift" joint="shoulder_lift"/>
+    <position class="muscle" name="elbow" joint="elbow"/>
+    <adhesion name="sucker" body="tip" ctrlrange="0 1" gain="120"/>
+  </actuator>
+
+  <sensor>
+    <touch name="touch" site="touch"/>
+  </sensor>
+</mujoco>

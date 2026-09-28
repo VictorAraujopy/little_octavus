@@ -1,0 +1,106 @@
+import torch
+from torch import nn
+
+#model
+class Octavus_brain(nn.Module):
+    def __init__(self):
+        super().__init__()
+        
+        n_arms, n_arm_x, n_body_x, n_arm_y = 8, 7, 13, 4
+        
+        self.n_arms = n_arms
+        self.n_arm_x = n_arm_x
+        
+        #calculate each arms angle start at 22.5 and go foward with 45 for each arm
+        angles = torch.deg2rad(22.5 + 45 * torch.arange(n_arms))
+        self.arm_position = torch.stack([angles.cos(), angles.sin()], dim=-1)
+        
+        n_x_for_neural = n_arm_x + n_body_x + self.arm_position.shape[1]
+        
+        self.arm = nn.Sequential(
+            nn.Linear(n_x_for_neural, 64),
+            nn.Tanh(),
+            nn.Linear(64, 64),
+            nn.Tanh(),
+            nn.Linear(64, n_arm_y)
+        
+        )
+        
+        
+        self.critic = nn.Sequential(
+            nn.Linear(n_arms * n_arm_x + n_body_x, 64),
+            nn.Tanh(),
+            nn.Linear(64, 64),
+            nn.Tanh(),
+            nn.Linear(64, 1)
+            
+        )
+        self.exploration = nn.Parameter(torch.zeros(n_arm_y))
+        
+    def act(self, x: torch.Tensor):
+        #all arms and motors
+        n_arm_numbers = self.n_arms * self.n_arm_x
+        #get the n arm number and put it in a table 8 lines x 7     
+        #that means what each arm are or feel or do '-'
+        arms_x = x[..., :n_arm_numbers].unflatten(-1, (self.n_arms, self.n_arm_x))
+        #body numbers copied to each arm (8 x 13)
+        body_x = x[..., n_arm_numbers:].unsqueeze(-2).expand(*arms_x.shape[:-1], -1)
+        position = self.arm_position.expand(*arms_x.shape[:-1], -1)
+        
+        #each arm: 7 + 13 + 2 = 22
+        each_arm_x = torch.cat([arms_x, body_x, position], dim=-1)
+        gross_y = self.arm(each_arm_x).flatten(-2)
+        #4 explorations shared by the 8 arms
+        variation = self.exploration.exp().repeat(self.n_arms)
+        distribuition = torch.distributions.Normal(gross_y, variation)
+        draw_y = distribuition.sample()
+        return draw_y
+
+
+class SimpleBrain(nn.Module):
+    
+    def __init__(self, n_x, n_y): #number of x and number of y (not the real values)
+        #runs the nn.Module __init__
+        #super refers the mother class(nn.Module)
+        super().__init__()
+        #neural network that decides the action
+        self.body = nn.Sequential(#create the object
+            nn.Linear(n_x, 64),#Neural layer, defines the layer size and create it
+            #make a curve so the multiply dont stay only on a straight line
+            nn.Tanh(),
+            nn.Linear(64, 64),
+            nn.Tanh(),
+            nn.Linear(64, n_y),
+        )
+        self.exploration = nn.Parameter(torch.zeros(n_y))#create a number for each y
+        
+        self.critic = nn.Sequential(
+            nn.Linear(n_x, 64),
+            nn.Tanh(),
+            nn.Linear(64, 64),
+            nn.Tanh(),
+            nn.Linear(64, 1),    
+        )
+    
+    def act(self, x):
+        gross_y = self.body(x)
+        variation = self.exploration.exp()#read the exploration number 
+        #exp catch the number and made 2 raised by it
+        
+        distribuition = torch.distributions.Normal(gross_y, variation)
+        #keep de randomizer
+        draw_y = distribuition.sample()#do the math and draw 
+        
+        return draw_y
+    
+if __name__ == "__main__":
+    brain = SimpleBrain(n_x=3, n_y=1)
+    x = torch.tensor([1.0, 0.0, 0.5])#the neural network just accept 
+    #tensor values
+    #same x three times: the draw should give a different y each time
+    print("y:", brain.act(x))
+    print("y:", brain.act(x))
+    print("y:", brain.act(x))
+    #critic's guess of how much reward comes from this situation
+    print("critic:", brain.critic(x))
+    print("weights:", sum(p.numel() for p in brain.parameters()))

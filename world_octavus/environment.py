@@ -12,7 +12,7 @@ Action (48 numbers between -1 and 1), also grouped by arm:
 
 The reward is not decided here: the trainer passes a function reward_fn(info) -> float,
 and the environment hands over the facts of each step in the info dict:
-distance, previous_distance, reached, flipped, action, previous_action, vertical_speed, height, dt.
+distance, previous_distance, reached, flipped, action, previous_action, vertical_speed, height, spin, power (watts), tips_touching (0 to 1), airborne (nothing touching the floor), facing (1 = eyes pointing at the target, -1 = back to it), dt.
 
 Watch the octopus moving randomly (on macOS the viewer needs mjpython):
     uv run mjpython world_octavus/environment.py
@@ -33,9 +33,9 @@ class OctopusEnv(gym.Env):
     metadata = {"render_modes": ["human"]}
 
     physics_steps = 5
-    max_steps = 1000
-    target_radius = 0.25
-    target_distance = (1.5, 3.0)
+    max_steps = 2000
+    target_radius = 0.15
+    target_distance = (3.0, 6.0)
     initial_noise = 0.1
     # keep every observation number close to 1, so the brain's Tanh layers don't saturate
     joint_velocity_scale = 10.0
@@ -52,6 +52,7 @@ class OctopusEnv(gym.Env):
         self.torso = self.model.body("torso").id
         self.n_arms = sum(self.model.body(i).name.startswith("arm") for i in range(self.model.nbody))
         self.motor_limits = self.model.actuator_ctrlrange.copy()
+        self.muscles = self.model.actuator_trntype != mujoco.mjtTrn.mjTRN_BODY
         self.dt = self.model.opt.timestep * self.physics_steps
         self.target = np.zeros(2)
 
@@ -96,6 +97,11 @@ class OctopusEnv(gym.Env):
             "previous_action": self.previous_action,
             "vertical_speed": self.data.qvel[2],
             "height": self.data.xpos[self.torso][2],
+            "spin": self.data.qvel[5],
+            "power": self._muscle_power(),
+            "tips_touching": (self.data.sensordata > 1.0).mean(),
+            "airborne": self.data.ncon == 0,
+            "facing": self._facing_target(),
             "dt": self.dt,
         }
         reward = self.reward_fn(info) if self.reward_fn else 0.0
@@ -121,6 +127,17 @@ class OctopusEnv(gym.Env):
         if self.viewer is not None:
             self.viewer.close()
             self.viewer = None
+
+    def _muscle_power(self):
+        # how hard the muscles are working: |force x speed| summed over every joint motor (suckers excluded)
+        force, speed = self.data.actuator_force, self.data.actuator_velocity
+        return np.abs(force * speed)[self.muscles].sum()
+
+    def _facing_target(self):
+        # cosine of the angle between where the eyes point (the body's +x) and the target, on the floor plane
+        rotation = self.data.xmat[self.torso].reshape(3, 3)
+        seen = rotation.T @ (np.array([*self.target, 0.0]) - self.data.xpos[self.torso])
+        return seen[0] / (np.hypot(seen[0], seen[1]) + 1e-8)
 
     def _distance_to_target(self):
         return np.linalg.norm(self.data.xpos[self.torso][:2] - self.target)

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import gymnasium as gym
 import torch
 from brain_octavus.brain import Octavus_brain
@@ -8,11 +10,15 @@ from world_octavus.environment import OctopusEnv
 env = OctopusEnv(reward_fn=rw)
 
 brain = Octavus_brain()
+#continue from the last saved brain instead of starting from zero
+if Path("octavus.pt").exists():
+    brain.load_state_dict(torch.load("octavus.pt"))
+    print("continuing from octavus.pt")
 #weights adjuster. Adam its the pattern: adjust each weight in the rigth size alone
 # lr = learning rate. size of the adjusts
 optimizer = torch.optim.Adam(brain.parameters(), lr=3e-4)
 n_steps = 2048 #steps before learn
-n_laps = 30000 #~1 hour, ctrl+c to stop (saves every 10 laps)
+n_laps = 300000 #~1 hour, ctrl+c to stop (saves every 10 laps)
 gamma = 0.99
 #gamma = discount
 clip = 0.2 #PPO small step: an action's chance changes at most 20% per lap

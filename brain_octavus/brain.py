@@ -15,41 +15,31 @@ class Octavus_brain(nn.Module):
         angles = torch.deg2rad(22.5 + 45 * torch.arange(n_arms))
         self.arm_position = torch.stack([angles.cos(), angles.sin()], dim=-1)
         
-        n_x_for_neural = n_arm_x + n_body_x + self.arm_position.shape[1]
+        n_x_for_neural = n_body_x + n_arm_x * n_arms
         
         self.arm = nn.Sequential(
-            nn.Linear(n_x_for_neural, 64),
+            nn.Linear(n_x_for_neural, 256),
             nn.Tanh(),
-            nn.Linear(64, 64),
+            nn.Linear(256, 256),
             nn.Tanh(),
-            nn.Linear(64, n_arm_y)
+            nn.Linear(256, n_arm_y * n_arms)
         
         )
         
         
         self.critic = nn.Sequential(
-            nn.Linear(n_arms * n_arm_x + n_body_x, 64),
+            nn.Linear(n_arms * n_arm_x + n_body_x, 256),
             nn.Tanh(),
-            nn.Linear(64, 64),
+            nn.Linear(256, 256),
             nn.Tanh(),
-            nn.Linear(64, 1)
+            nn.Linear(256, 1)
             
         )
         self.exploration = nn.Parameter(torch.zeros(n_arm_y))
         
     def act(self, x: torch.Tensor):
-        #all arms and motors
-        n_arm_numbers = self.n_arms * self.n_arm_x
-        #get the n arm number and put it in a table 8 lines x 7     
-        #that means what each arm are or feel or do '-'
-        arms_x = x[..., :n_arm_numbers].unflatten(-1, (self.n_arms, self.n_arm_x))
-        #body numbers copied to each arm (8 x 13)
-        body_x = x[..., n_arm_numbers:].unsqueeze(-2).expand(*arms_x.shape[:-1], -1)
-        position = self.arm_position.expand(*arms_x.shape[:-1], -1)
-        
-        #each arm: 7 + 13 + 2 = 22
-        each_arm_x = torch.cat([arms_x, body_x, position], dim=-1)
-        gross_y = self.arm(each_arm_x).flatten(-2)
+   
+        gross_y = self.arm(x)
         #4 explorations shared by the 8 arms
         variation = self.exploration.exp().repeat(self.n_arms)
         distribuition = torch.distributions.Normal(gross_y, variation)

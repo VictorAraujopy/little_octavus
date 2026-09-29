@@ -59,7 +59,7 @@
       <geom class="visual" type="cylinder" size="0.12 0.005" rgba="1 0.25 0.2 0.7"/>
     </body>
 
-    <body name="torso" pos="0 0 0.3">
+    <body name="torso" pos="0 0 0.19">
       <freejoint name="root"/>
       <camera name="follow" mode="trackcom" pos="0 -1.8 1.1" xyaxes="1 0 0 0 0.53 0.848"/>
       <geom name="head" type="sphere" size="0.12"/>

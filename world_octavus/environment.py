@@ -171,7 +171,9 @@ class OctopusEnv(gym.Env):
         }
         reward = self.reward_fn(info) if self.reward_fn else 0.0
         self.previous_action = action
-        terminated = reached or flipped
+        # flipping over doesn't end the episode: it has to right itself. Ending it made dying early
+        # a way out whenever living scored negative
+        terminated = reached
         truncated = self.step_count >= self.max_steps
 
         if self.render_mode == "human":

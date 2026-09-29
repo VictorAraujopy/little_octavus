@@ -26,9 +26,9 @@ def reward(info):
     tips_up = 1.0 - info["tips_touching"]
     score = progress - 0.05 * jerk - 0.05 * turn - energy - 0.1 * tips_up - 0.05 * not_facing
 
-    if info["flipped"]:
-        score -= 10
-        
+    #no extra cost for flipping over, and it no longer ends the episode: upside down it can't crawl
+    #or face the target, so the normal costs keep running until it rights itself
+
     if info["reached"]:
         score += 10
     

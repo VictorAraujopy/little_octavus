@@ -12,7 +12,7 @@ brain = Octavus_brain()
 # lr = learning rate. size of the adjusts
 optimizer = torch.optim.Adam(brain.parameters(), lr=3e-4)
 n_steps = 2048 #steps before learn
-n_laps = 6000 #~1 hour, ctrl+c to stop (saves every 10 laps)
+n_laps = 30000 #~1 hour, ctrl+c to stop (saves every 10 laps)
 gamma = 0.99
 #gamma = discount
 clip = 0.2 #PPO small step: an action's chance changes at most 20% per lap

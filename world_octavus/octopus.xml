@@ -1,12 +1,14 @@
 <!--
   Octavus's body and the sea floor, in MuJoCo's MJCF format.
 
-  The octopus has 8 arms. Each arm has 2 segments and 4 motors:
+  The octopus has 8 arms. Each arm has 3 segments and 6 motors:
     shoulder_swing - swings the arm sideways (sweeps forward/back)
     shoulder_lift  - lifts the whole arm off the floor or pushes it down
-    elbow          - bends the tip up/down
+    elbow          - bends the middle segment up/down
+    tip_bend       - bends the tip up/down      (weak muscle: the tip stays soft)
+    tip_curl       - curls the tip sideways    (weak muscle: the tip stays soft)
     sucker         - sticks the tip to whatever it is touching (floor, crab)
-  Plus a touch sensor on the tip. In total: 32 motors and 8 touch sensors.
+  Plus a touch sensor on the tip. In total: 48 motors and 8 touch sensors.
   Mantle, web, eyes and the curled tip are visual only: no mass, no collision.
 
   View it (from the project root; the path must be absolute, hence $PWD):
@@ -40,6 +42,10 @@
     <default class="muscle">
       <position kp="40" kv="1" forcerange="-25 25" inheritrange="1"/>
     </default>
+    <!-- weak muscles on the tip: it gives and sways in the water instead of snapping into place -->
+    <default class="soft_muscle">
+      <position kp="8" kv="0.3" forcerange="-4 4" inheritrange="1"/>
+    </default>
     <default class="visual">
       <geom contype="0" conaffinity="0" density="0"/>
     </default>
@@ -69,20 +75,26 @@
           <joint name="shoulder_swing" axis="0 0 1" range="-30 30"/>
           <joint name="shoulder_lift" axis="0 1 0" range="-35 35"/>
           <geom type="capsule" fromto="0 0 0 0.25 0 -0.09" size="0.045"/>
-          <body name="tip" pos="0.25 0 -0.09" euler="0 6 0">
+          <body name="mid" pos="0.25 0 -0.09" euler="0 6 0">
             <joint name="elbow" axis="0 1 0" range="-40 40"/>
-            <geom material="tip" type="capsule" fromto="0 0 0 0.3 0 0" size="0.03"/>
-            <site name="touch" type="capsule" fromto="0 0 0 0.3 0 0" size="0.035" rgba="0 0 0 0"/>
-            <geom class="visual" material="tip" type="capsule" fromto="0 0 0 0.12 0 0" size="0.037"/>
-            <geom class="visual" material="tip" type="capsule" fromto="0.3 0 0 0.38 0 0.012" size="0.025"/>
-            <geom class="visual" material="tip" type="capsule" fromto="0.38 0 0.012 0.44 0 0.045" size="0.021"/>
-            <geom class="visual" material="tip" type="capsule" fromto="0.44 0 0.045 0.47 0 0.095" size="0.017"/>
-            <geom class="visual" material="tip" type="capsule" fromto="0.47 0 0.095 0.455 0 0.14" size="0.014"/>
-            <geom class="visual" material="tip" type="capsule" fromto="0.455 0 0.14 0.415 0 0.16" size="0.011"/>
-            <geom class="visual" material="tip" type="capsule" fromto="0.415 0 0.16 0.385 0 0.14" size="0.008"/>
-            <geom class="visual" material="sucker" type="sphere" size="0.01" pos="0.432 0 0.062"/>
-            <geom class="visual" material="sucker" type="sphere" size="0.009" pos="0.45 0 0.1"/>
-            <geom class="visual" material="sucker" type="sphere" size="0.007" pos="0.438 0 0.13"/>
+            <geom material="tip" type="capsule" fromto="0 0 0 0.18 0 0" size="0.032"/>
+            <geom class="visual" material="tip" type="capsule" fromto="0 0 0 0.07 0 0" size="0.038"/>
+            <body name="tip" pos="0.18 0 0" euler="0 3 0">
+              <joint name="tip_bend" axis="0 1 0" range="-45 45"/>
+              <joint name="tip_curl" axis="0 0 1" range="-45 45"/>
+              <geom material="tip" type="capsule" fromto="0 0 0 0.15 0 0" size="0.022"/>
+              <site name="touch" type="capsule" fromto="0 0 0 0.15 0 0" size="0.027" rgba="0 0 0 0"/>
+              <geom class="visual" material="tip" type="capsule" fromto="0 0 0 0.05 0 0" size="0.027"/>
+              <geom class="visual" material="tip" type="capsule" fromto="0.15 0 0 0.206 0 0.0084" size="0.018"/>
+              <geom class="visual" material="tip" type="capsule" fromto="0.206 0 0.0084 0.248 0 0.0315" size="0.015"/>
+              <geom class="visual" material="tip" type="capsule" fromto="0.248 0 0.0315 0.269 0 0.0665" size="0.012"/>
+              <geom class="visual" material="tip" type="capsule" fromto="0.269 0 0.0665 0.2585 0 0.098" size="0.01"/>
+              <geom class="visual" material="tip" type="capsule" fromto="0.2585 0 0.098 0.2305 0 0.112" size="0.008"/>
+              <geom class="visual" material="tip" type="capsule" fromto="0.2305 0 0.112 0.2095 0 0.098" size="0.006"/>
+              <geom class="visual" material="sucker" type="sphere" size="0.007" pos="0.2424 0 0.0434"/>
+              <geom class="visual" material="sucker" type="sphere" size="0.0065" pos="0.255 0 0.07"/>
+              <geom class="visual" material="sucker" type="sphere" size="0.005" pos="0.2466 0 0.091"/>
+            </body>
           </body>
         </body>
       </replicate>
@@ -93,6 +105,8 @@
     <position class="muscle" name="shoulder_swing" joint="shoulder_swing"/>
     <position class="muscle" name="shoulder_lift" joint="shoulder_lift"/>
     <position class="muscle" name="elbow" joint="elbow"/>
+    <position class="soft_muscle" name="tip_bend" joint="tip_bend"/>
+    <position class="soft_muscle" name="tip_curl" joint="tip_curl"/>
     <adhesion name="sucker" body="tip" ctrlrange="0 1" gain="120"/>
   </actuator>
 

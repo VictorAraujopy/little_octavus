@@ -3,16 +3,16 @@ Octavus environment in the Gymnasium format: the octopus has to walk to a target
 
 Each episode the octopus starts at the center and the target appears in a random direction.
 
-Observation (69 numbers), grouped by arm so one network can be shared by all arms:
-    obs[:56].reshape(8, 7) -> one row per arm: 3 angles, 3 velocities, 1 touch
-    obs[56:]               -> body: target (3), up (3), velocity (3), spin (3), height (1)
+Observation (101 numbers), grouped by arm so one network can be shared by all arms:
+    obs[:88].reshape(8, 11) -> one row per arm: 5 angles, 5 velocities, 1 touch
+    obs[88:]                -> body: target (3), up (3), velocity (3), spin (3), height (1)
 
-Action (32 numbers between -1 and 1), also grouped by arm:
-    action.reshape(8, 4)   -> one row per arm: shoulder_swing, shoulder_lift, elbow, sucker
+Action (48 numbers between -1 and 1), also grouped by arm:
+    action.reshape(8, 6)    -> one row per arm: shoulder_swing, shoulder_lift, elbow, tip_bend, tip_curl, sucker
 
 The reward is not decided here: the trainer passes a function reward_fn(info) -> float,
 and the environment hands over the facts of each step in the info dict:
-distance, previous_distance, reached, flipped, action, previous_action, vertical_speed, dt.
+distance, previous_distance, reached, flipped, action, previous_action, vertical_speed, height, dt.
 
 Watch the octopus moving randomly (on macOS the viewer needs mjpython):
     uv run mjpython world_octavus/environment.py
@@ -95,6 +95,7 @@ class OctopusEnv(gym.Env):
             "action": action,
             "previous_action": self.previous_action,
             "vertical_speed": self.data.qvel[2],
+            "height": self.data.xpos[self.torso][2],
             "dt": self.dt,
         }
         reward = self.reward_fn(info) if self.reward_fn else 0.0

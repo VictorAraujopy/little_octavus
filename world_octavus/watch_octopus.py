@@ -23,8 +23,11 @@ def load_latest(brain):
     try:
         brain.load_state_dict(torch.load(CHECKPOINT))
         return True
-    except (FileNotFoundError, RuntimeError, EOFError):
-        # file missing, or caught while the trainer was writing it: keep the previous weights
+    except RuntimeError as error:
+        if "size mismatch" in str(error):
+            raise SystemExit(f"{CHECKPOINT.name} was trained on a different body: train again with the current one")
+        return False  # caught while the trainer was writing it: keep the previous weights
+    except (FileNotFoundError, EOFError):
         return False
 
 

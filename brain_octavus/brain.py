@@ -6,7 +6,7 @@ class Octavus_brain(nn.Module):
     def __init__(self):
         super().__init__()
         
-        n_arms, n_arm_x, n_body_x, n_arm_y = 8, 7, 13, 4
+        n_arms, n_arm_x, n_body_x, n_arm_y = 8, 11, 13, 6
         
         self.n_arms = n_arms
         self.n_arm_x = n_arm_x

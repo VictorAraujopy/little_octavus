@@ -1,12 +1,13 @@
-# little_octavus
+# octavus
 
 An octopus that learns to walk across the sea floor — and later to hunt a crab — through reinforcement learning. The brain and the PPO training loop are written from scratch in PyTorch; the body and the physics run on MuJoCo.
 
 ## How it works
 
-- **The world** (`world_octavus/`): an octopus with 8 arms on a sandy sea floor, simulated in MuJoCo with water drag. Each arm has 3 segments and 6 motors (shoulder swing, shoulder lift, elbow, tip bend, tip curl, sucker) plus a touch sensor on the tip — 48 motors in total. The tip joints have deliberately weak muscles, so the tips sway and give in the water like soft tentacles. The environment follows the Gymnasium API and places a target on the floor in a random direction every episode.
-- **The brain** (`brain_octavus/brain.py`): an actor-critic network with **196,407 parameters**. The actor is a single network that sees the whole octopus (101 numbers) and drives all 48 motors at once, so the arms can coordinate with each other. The critic looks at the same 101 numbers and estimates how much reward is still to come. (An earlier version shared one small network across the 8 arms, each arm deciding on its own; it learned fast but couldn't coordinate a proper gait.)
-- **The reward** (`brain_octavus/reward.py`) is kept out of the environment on purpose: the trainer passes a `reward_fn(info)`, and the environment only reports the facts of each step. Octavus earns points for getting closer to the target (capped at an octopus pace of 0.3 m/s, so rushing earns nothing) and loses points for wasted muscle energy, jerky moves, bouncing, flying (nothing touching the floor), keeping its arm tips off the floor, lifting its body like a spider, spinning, flipping over and not facing the target — it has a front now, where its eyes point. Every one of those penalties was added after the agent found a way to exploit the previous reward.
+- **The world** (`world_octavus/`): an octopus with 8 arms on a sandy sea floor, simulated in MuJoCo as sea water: Earth's gravity plus buoyancy (an octopus is ~5% denser than sea water, so only ~15 N of its weight rests on the floor), water drag, and slippery skin (friction 0.3) so the suckers do the gripping. Each arm has 3 segments and 6 motors (shoulder swing, shoulder lift, elbow, tip bend, tip curl, sucker) plus a touch sensor on the tip. The tip joints have deliberately weak muscles, so the tips sway and give in the water like soft tentacles. A siphon adds 2 more motors, 50 in total: it aims the funnel and squirts the water in the mantle (up to 60 N). Like a real mantle it is a pump: a full squirt empties it in 1 s and it only refills while relaxed. And like a real octopus, whose main heart stops while it swims, it tires after about 3 s of jetting and needs 30 s of rest. The environment follows the Gymnasium API and places a target on the floor in a random direction every episode.
+- **Energy** is the metabolic cost, what the food pays for: muscles pushing cost 4x their work (25% efficient), muscles braking about 1/1.2 of it, suckers hold for free (the tissue stores the tension), the jet costs its hydrodynamic power at the same efficiency, plus 2.7 W just to be alive.
+- **The brain** (`brain_octavus/brain.py`): an actor-critic network with **198,459 parameters**. The actor is a single network that sees the whole octopus (104 numbers) and drives all 50 motors at once, so the arms and the siphon can coordinate with each other. The critic looks at the same 104 numbers and estimates how much reward is still to come. (An earlier version shared one small network across the 8 arms, each arm deciding on its own; it learned fast but couldn't coordinate a proper gait.)
+- **The reward** (`brain_octavus/reward.py`) is kept out of the environment on purpose: the trainer passes a `reward_fn(info)`, and the environment only reports the facts of each step. Octavus earns points for getting closer to the target and pays for the metabolic energy it spends, so it should find the cheapest way to get there, crawling or jetting. It also loses points for jerky moves, keeping its arm tips off the floor, spinning, flipping over and not facing the target (it has a front, where its eyes point). Each of those penalties was added after the agent found a way to exploit the previous reward. The penalties for bouncing, flying and lifting its body were dropped once the world became sea water with a real energy cost: the physics now decides whether swimming is worth it.
 - **The training** (`brain_octavus/train.py`): PPO — play 2048 steps, score every decision against what the critic expected, nudge the arms towards the better-than-expected moves (never more than 20% per round), repeat.
 
 ## Status
@@ -18,7 +19,9 @@ Work in progress — training started on day one.
 - [x] Reward function
 - [x] PPO training loop
 - [x] Walking to a target — after about 10 minutes of training it reached the target in every test episode… by bouncing there
-- [ ] Crawling like an actual octopus — in progress: it no longer hops (0% of the time in the air, down from 43%) and crawls with most arm tips on the floor; now learning to turn towards the target and get there
+- [x] Stopped hopping (0% of the time in the air, down from 43%), then learned to walk backwards instead of turning around
+- [x] Sea-water world: buoyancy, slippery skin, a siphon jet and a realistic metabolic energy cost
+- [ ] Crawling like an actual octopus — in progress: retraining from scratch in the sea-water world
 - [ ] Hunting a crab that learns to run away
 
 ## Running

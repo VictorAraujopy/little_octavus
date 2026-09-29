@@ -6,7 +6,7 @@ class Octavus_brain(nn.Module):
     def __init__(self):
         super().__init__()
         
-        n_arms, n_arm_x, n_body_x, n_arm_y = 8, 11, 13, 6
+        n_arms, n_arm_x, n_body_x, n_arm_y, n_jet = 8, 11, 14, 6, 2
         
         self.n_arms = n_arms
         self.n_arm_x = n_arm_x
@@ -15,33 +15,38 @@ class Octavus_brain(nn.Module):
         angles = torch.deg2rad(22.5 + 45 * torch.arange(n_arms))
         self.arm_position = torch.stack([angles.cos(), angles.sin()], dim=-1)
         
-        n_x_for_neural = n_body_x + n_arm_x * n_arms
+        n_x_for_neural = n_jet + n_body_x + n_arm_x * n_arms
         
         self.arm = nn.Sequential(
             nn.Linear(n_x_for_neural, 256),
             nn.Tanh(),
             nn.Linear(256, 256),
             nn.Tanh(),
-            nn.Linear(256, n_arm_y * n_arms)
+            nn.Linear(256, n_arm_y * n_arms + n_jet)
         
         )
         
         
         self.critic = nn.Sequential(
-            nn.Linear(n_arms * n_arm_x + n_body_x, 256),
+            nn.Linear(n_x_for_neural, 256),
             nn.Tanh(),
             nn.Linear(256, 256),
             nn.Tanh(),
             nn.Linear(256, 1)
             
         )
-        self.exploration = nn.Parameter(torch.zeros(n_arm_y))
+        n_exploration = n_arm_y + n_jet
+        self.exploration = nn.Parameter(torch.zeros(n_exploration))
         
     def act(self, x: torch.Tensor):
    
         gross_y = self.arm(x)
-        #4 explorations shared by the 8 arms
-        variation = self.exploration.exp().repeat(self.n_arms)
+        
+        arms = self.exploration[:6].repeat(self.n_arms) #each arm recive the same draw
+        jets = self.exploration[6:]
+        exp_format = torch.cat([arms, jets])
+        
+        variation = exp_format.exp()
         distribuition = torch.distributions.Normal(gross_y, variation)
         draw_y = distribuition.sample()
         return draw_y, distribuition

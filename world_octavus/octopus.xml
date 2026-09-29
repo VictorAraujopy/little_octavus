@@ -101,6 +101,15 @@
           </body>
         </body>
       </replicate>
+
+      <!-- the siphon (funnel): swivels around the head and squirts the mantle's water, tilted 20 degrees down.
+           It comes after the arms so their joints keep the same place in qpos. No collision: it only aims the jet -->
+      <body name="siphon" pos="0 0 -0.03" gravcomp="0.952">
+        <joint name="siphon_aim" axis="0 0 1" range="-180 180"/>
+        <geom material="skin" type="capsule" fromto="0.08 0 0 0.16 0 -0.029" size="0.02" contype="0" conaffinity="0"/>
+        <!-- the jet pushes the body opposite to where the water leaves: backwards and a bit up -->
+        <site name="jet" zaxis="-0.94 0 0.342" size="0.01" rgba="0 0 0 0"/>
+      </body>
     </body>
   </worldbody>
 
@@ -111,6 +120,9 @@
     <position class="soft_muscle" name="tip_bend" joint="tip_bend"/>
     <position class="soft_muscle" name="tip_curl" joint="tip_curl"/>
     <adhesion name="sucker" body="tip" ctrlrange="0 1" gain="120"/>
+    <position class="soft_muscle" name="siphon_aim" joint="siphon_aim"/>
+    <!-- up to 60 N, 4x its weight in water: one full squirt lifts it off. The environment stops it when the mantle is empty -->
+    <motor name="jet" site="jet" ctrlrange="0 1" gear="0 0 60 0 0 0"/>
   </actuator>
 
   <sensor>

@@ -18,9 +18,9 @@ if Path("octavus.pt").exists():
 # lr = learning rate. size of the adjusts
 optimizer = torch.optim.Adam(brain.parameters(), lr=3e-4)
 n_steps = 2048 #steps before learn
-n_laps = 300000 #~1 hour, ctrl+c to stop (saves every 10 laps)
+n_laps = 300000 #time of training ctrl+c to stop (saves every 10 laps)
 gamma = 0.99
-#gamma = discount
+#gamma = future grades discount
 clip = 0.2 #PPO small step: an action's chance changes at most 20% per lap
 minibatch_size = 64
 x, _ = env.reset(seed=0)
@@ -65,7 +65,7 @@ for lap in range(n_laps):
     advantages = real_grade - model_predict_grades
     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-    for epoch in range(10):
+    for epoch in range(10):#how many times it adjust the weight from the memory
         predicted = brain.critic(xs).squeeze(-1)
         critic_loss = ((predicted - real_grade) ** 2).mean()
         

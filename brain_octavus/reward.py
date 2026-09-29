@@ -1,3 +1,4 @@
+import math
 
 def reward(info):
     progress = (info["previous_distance"] - info["distance"]) / info["dt"]
@@ -10,14 +11,15 @@ def reward(info):
     #bouncing up and down costs points (vertical speed squared)
     bounce = info["vertical_speed"] ** 2
     #lifting the body high like a spider costs points: an octopus crawls low
-    #0.19 = a bit above the resting height (0.173), so small movements are free
-    lift = max(0.0, info["height"] - 0.19)
+    #0.203 = 2 cm above the resting height in sea water (0.183), so small movements are free
+    lift = max(0.0, info["height"] - 0.203)
     #spinning costs a little (it now needs to turn to face the target), capped so a flailing newborn
     #isn't fined into standing still
     turn = min(info["spin"] ** 2, 0.5)
     #the octopus has a front now (where the eyes point): not facing the target costs points
     #0 when looking straight at it, 1 when it's to the side, 2 when it's behind
-    not_facing = 1.0 - info["facing"]
+    #by the angle, not the cosine: near 180 the cosine barely changes, so turning from behind earned nothing
+    not_facing = math.acos(info["facing"]) / (math.pi / 2)
     #muscle effort costs points: flapping the tentacles fast or slamming them wastes energy
     #real animals move the way that spends the least energy, that's what makes them look natural
     energy = info["power"] / 1000  #watts -> kilowatts

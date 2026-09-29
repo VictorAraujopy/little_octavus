@@ -17,7 +17,8 @@
 <mujoco model="octavus">
   <compiler angle="degree" autolimits="true"/>
 
-  <option timestep="0.005" integrator="implicitfast" gravity="0 0 -4" density="1000" viscosity="0.001"/>
+  <!-- sea water: Earth's gravity, and each body's gravcomp is the buoyancy (MuJoCo's fluid only adds drag) -->
+  <option timestep="0.005" integrator="implicitfast" gravity="0 0 -9.81" density="1025" viscosity="0.001"/>
 
   <visual>
     <rgba haze="0.05 0.25 0.35 1" fog="0.03 0.18 0.26 1"/>
@@ -37,7 +38,8 @@
   </asset>
 
   <default>
-    <geom material="skin" contype="2" conaffinity="1" friction="1.2 0.02 0.01"/>
+    <!-- slippery skin (mucus on wet sand): the suckers do the gripping. The floor inherits it: MuJoCo uses the larger of the two -->
+    <geom material="skin" contype="2" conaffinity="1" friction="0.3 0.02 0.01"/>
     <joint damping="0.5" armature="0.01"/>
     <default class="muscle">
       <position kp="40" kv="1" forcerange="-25 25" inheritrange="1"/>
@@ -59,7 +61,8 @@
       <geom class="visual" type="cylinder" size="0.12 0.005" rgba="1 0.25 0.2 0.7"/>
     </body>
 
-    <body name="torso" pos="0 0 0.19">
+    <!-- gravcomp 0.952: an octopus is ~5% denser than sea water, so the water holds 1/1.05 of its weight -->
+    <body name="torso" pos="0 0 0.19" gravcomp="0.952">
       <freejoint name="root"/>
       <camera name="follow" mode="trackcom" pos="0 -1.8 1.1" xyaxes="1 0 0 0 0.53 0.848"/>
       <geom name="head" type="sphere" size="0.12"/>
@@ -71,15 +74,15 @@
       <geom class="visual" material="pupil" type="ellipsoid" size="0.02 0.007 0.007" pos="0.055 -0.11 0.11"/>
 
       <replicate count="8" euler="0 0 45">
-        <body name="arm" pos="0.0924 0.0383 -0.05" euler="0 0 22.5">
+        <body name="arm" pos="0.0924 0.0383 -0.05" euler="0 0 22.5" gravcomp="0.952">
           <joint name="shoulder_swing" axis="0 0 1" range="-30 30"/>
           <joint name="shoulder_lift" axis="0 1 0" range="-35 35"/>
           <geom type="capsule" fromto="0 0 0 0.25 0 -0.09" size="0.045"/>
-          <body name="mid" pos="0.25 0 -0.09" euler="0 6 0">
+          <body name="mid" pos="0.25 0 -0.09" euler="0 6 0" gravcomp="0.952">
             <joint name="elbow" axis="0 1 0" range="-40 40"/>
             <geom material="tip" type="capsule" fromto="0 0 0 0.18 0 0" size="0.032"/>
             <geom class="visual" material="tip" type="capsule" fromto="0 0 0 0.07 0 0" size="0.038"/>
-            <body name="tip" pos="0.18 0 0" euler="0 3 0">
+            <body name="tip" pos="0.18 0 0" euler="0 3 0" gravcomp="0.952">
               <joint name="tip_bend" axis="0 1 0" range="-45 45"/>
               <joint name="tip_curl" axis="0 0 1" range="-45 45"/>
               <geom material="tip" type="capsule" fromto="0 0 0 0.15 0 0" size="0.022"/>

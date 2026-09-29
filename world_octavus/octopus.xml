@@ -52,10 +52,11 @@
       <geom name="head" type="sphere" size="0.12"/>
       <geom name="mantle" class="visual" type="ellipsoid" size="0.15 0.13 0.2" pos="-0.1 0 0.14" euler="0 -35 0"/>
       <geom name="web" class="visual" type="ellipsoid" size="0.2 0.2 0.035" pos="0 0 -0.07"/>
-      <geom class="visual" material="eye" type="sphere" size="0.042" pos="0.04 0.085 0.085"/>
-      <geom class="visual" material="eye" type="sphere" size="0.042" pos="0.04 -0.085 0.085"/>
-      <geom class="visual" material="pupil" type="ellipsoid" size="0.02 0.007 0.007" pos="0.055 0.11 0.11"/>
-      <geom class="visual" material="pupil" type="ellipsoid" size="0.02 0.007 0.007" pos="0.055 -0.11 0.11"/>
+      <!-- eyes on the sides of the head, looking sideways, with the octopus's horizontal slit pupil -->
+      <geom class="visual" material="eye" type="sphere" size="0.036" pos="0 0.105 0.06"/>
+      <geom class="visual" material="eye" type="sphere" size="0.036" pos="0 -0.105 0.06"/>
+      <geom class="visual" material="pupil" type="ellipsoid" size="0.016 0.003 0.005" pos="0 0.1328 0.0759" euler="29.7 0 0"/>
+      <geom class="visual" material="pupil" type="ellipsoid" size="0.016 0.003 0.005" pos="0 -0.1328 0.0759" euler="-29.7 0 0"/>
 
       <replicate count="8" euler="0 0 45">
         <body name="arm" pos="0.0924 0.0383 -0.05" euler="0 0 22.5">

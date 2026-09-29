@@ -19,8 +19,9 @@ def reward(info):
     #muscle effort costs points: flapping the tentacles fast or slamming them wastes energy
     #real animals move the way that spends the least energy, that's what makes them look natural
     #power is metabolic (what the food pays). 0.6 per kW: an efficient move (~55 W at 0.16 m/s) costs ~20% of its progress
-    #capped at 1.0 (~1700 W): only a flailing newborn (~3300 W) hits it, so it isn't fined into standing still
-    energy = min(0.6 * info["power"] / 1000, 1.0)
+    #log instead of a cap: a flailing newborn still pays only ~1 per step, but more power always costs more
+    #(the old cap at 1.0 made everything above ~1700 W free, and it learned to burn 3000 W)
+    energy = math.log(1 + 0.6 * info["power"] / 1000)
     #tips in the air cost points: an octopus crawls by pushing and pulling with its tips on the floor
     #(a penalty, not a bonus: pressing the tips down while standing still earns nothing)
     tips_up = 1.0 - info["tips_touching"]

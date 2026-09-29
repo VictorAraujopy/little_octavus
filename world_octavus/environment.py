@@ -3,14 +3,19 @@ Octavus environment in the Gymnasium format: the octopus has to walk to a target
 
 Each episode the octopus starts at the center and the target appears in a random direction.
 
-Observation (104 numbers), grouped by arm so one network can be shared by all arms:
-    obs[:88].reshape(8, 11) -> one row per arm: 5 angles, 5 velocities, 1 touch
-    obs[88:]                -> body: target (3), up (3), velocity (3), spin (3), height (1),
-                               siphon angle (1), mantle water (1), jet stamina (1)
+Each arm is a soft tentacle (see build_octopus.py): 16 segments in 4 sections, and each section has 4 muscles
+(bend up/down, bend sideways, twist, stretch/shorten) plus the suckers of its segments.
 
-Action (50 numbers between -1 and 1), the arms first and the siphon last:
-    action[:48].reshape(8, 6) -> one row per arm: shoulder_swing, shoulder_lift, elbow, tip_bend, tip_curl, sucker
-    action[48], action[49]    -> siphon: siphon_aim (where the funnel points), jet (how hard it squirts)
+Observation (304 numbers):
+    obs[:288].reshape(8, 4, 9) -> per arm, per section: where its 4 muscles are (-1 to 1 of their reach),
+                                  how fast they move, and how hard the section touches something
+    obs[288:]                  -> body: target (3), up (3), velocity (3), spin (3), height (1),
+                                  siphon angle (1), mantle water (1), jet stamina (1)
+
+Action (162 numbers between -1 and 1), the arms first and the siphon last:
+    action[:160].reshape(8, 4, 5) -> per arm, per section: bend_up, bend_side, twist, stretch, sucker
+                                     (one sucker number drives the suckers of all the section's segments)
+    action[160], action[161]      -> siphon: siphon_aim (where the funnel points), jet (how hard it squirts)
 
 The jet squirts the water in the mantle: a full jet empties it in 1 s, and it refills in 2 s while the jet rests.
 Jetting also stops the octopus's systemic heart, so it tires: 3 s of full jet in total, back after 30 s of rest.
@@ -20,7 +25,7 @@ muscles braking 1/1.2 of it, holding suckers nothing, the jet its hydrodynamic p
 
 The reward is not decided here: the trainer passes a function reward_fn(info) -> float,
 and the environment hands over the facts of each step in the info dict:
-distance, previous_distance, reached, flipped, action, previous_action, vertical_speed, height, spin, power (metabolic watts), tips_touching (0 to 1), airborne (nothing touching the floor), facing (1 = eyes pointing at the target, -1 = back to it), dt.
+distance, previous_distance, reached, flipped, action, previous_action, vertical_speed, height, spin, power (metabolic watts), tips_touching (0 to 1: arms whose last section touches something), airborne (nothing touching the floor), facing (1 = eyes pointing at the target, -1 = back to it), dt.
 
 Watch the octopus moving randomly (on macOS the viewer needs mjpython):
     uv run mjpython world_octavus/environment.py
@@ -34,7 +39,10 @@ import mujoco
 import mujoco.viewer
 import numpy as np
 
+from world_octavus.build_octopus import SECTIONS, SEGMENTS, section_of
+
 XML = Path(__file__).resolve().parent / "octopus.xml"
+MUSCLES = ("bend_up", "bend_side", "twist", "stretch")
 
 
 class OctopusEnv(gym.Env):
@@ -44,10 +52,11 @@ class OctopusEnv(gym.Env):
     max_steps = 2000
     target_radius = 0.15
     target_distance = (3.0, 6.0)
-    initial_noise = 0.1
+    initial_noise = 0.1  # fraction of each joint's range
     # keep every observation number close to 1, so the brain's Tanh layers don't saturate
-    joint_velocity_scale = 10.0
-    touch_scale = 100.0
+    muscle_speed_time = 0.1  # a muscle crossing its whole reach in 0.1 s reads 1
+    touch_scale = 100.0  # a section gripping with its suckers presses up to ~90 N
+    tip_touch = 0.005  # newtons: a resting tip lies on the floor with ~0.01 N, so half of that counts as touching
     spin_scale = 5.0
     jet_empty_time = 1.0
     jet_refill_time = 2.0
@@ -59,40 +68,66 @@ class OctopusEnv(gym.Env):
     braking_efficiency = 1.2
     basal_power = 2.7  # resting O2 use of a 32 kg octopus
 
-    def __init__(self, reward_fn=None, render_mode=None):
-        self.model = mujoco.MjModel.from_xml_path(str(XML))
+    def __init__(self, reward_fn=None, render_mode=None, xml=XML):
+        self.model = mujoco.MjModel.from_xml_path(str(xml))
         self.data = mujoco.MjData(self.model)
         self.reward_fn = reward_fn
         self.render_mode = render_mode
         self.viewer = None
+        m = self.model
 
-        self.torso = self.model.body("torso").id
-        self.n_arms = sum(self.model.body(i).name.startswith("arm") for i in range(self.model.nbody))
-        # MuJoCo lists the siphon's motors before the replicated arms; the brain gets the arms first, siphon last
-        siphon_motors = [self.model.actuator("siphon_aim").id, self.model.actuator("jet").id]
-        self.motor_order = [i for i in range(self.model.nu) if i not in siphon_motors] + siphon_motors
-        self.motor_limits = self.model.actuator_ctrlrange[self.motor_order]
-        self.muscles = self.model.actuator_trntype == mujoco.mjtTrn.mjTRN_JOINT
-        self.jet = self.model.actuator("jet").id
-        self.max_thrust = self.model.actuator_gear[self.jet][2]
-        siphon_joint = self.model.joint("siphon_aim").id
-        self.siphon_qpos = self.model.jnt_qposadr[siphon_joint]
-        self.siphon_qvel = self.model.jnt_dofadr[siphon_joint]
+        self.torso = m.body("torso").id
+        self.n_arms = sum(m.body(i).name.startswith("arm") for i in range(m.nbody))
+        motor = {m.actuator(i).name: i for i in range(m.nu)}
+        tendon = lambda name: m.tendon(name).id
+        sensor = lambda name: m.sensor_adr[m.sensor(name).id]
+
+        # the brain speaks per section: 4 muscles, then one number for all the suckers of that section's segments
+        drives = []
+        for a in range(self.n_arms):
+            for k in range(SECTIONS):
+                drives += [[motor[f"sec{k}_{kind}{a}"]] for kind in MUSCLES]
+                drives.append([motor[f"seg{i}_sucker{a}"] for i in range(SEGMENTS) if section_of(i) == k])
+        drives += [[motor["siphon_aim"]], [motor["jet"]]]
+        self.action_of_motor = np.zeros(m.nu, dtype=int)
+        for number, motors in enumerate(drives):
+            self.action_of_motor[motors] = number
+        self.n_actions = len(drives)
+
+        self.section_muscles = np.array([[[tendon(f"sec{k}_{kind}{a}") for kind in MUSCLES]
+                                          for k in range(SECTIONS)] for a in range(self.n_arms)])
+        # a muscle's reach: how far its tendon goes when all its joints hit their limit
+        joints = [m.wrap_objid[m.tendon_adr[t]:m.tendon_adr[t] + m.tendon_num[t]] for t in range(m.ntendon)]
+        reach = np.array([np.abs(m.jnt_range[j]).max(axis=1).sum() for j in joints])
+        self.muscle_reach = reach[self.section_muscles]
+        # sums each segment's touch sensor into its section
+        self.touch_to_section = np.zeros((self.n_arms * SECTIONS, m.nsensordata))
+        for a in range(self.n_arms):
+            for i in range(SEGMENTS):
+                self.touch_to_section[a * SECTIONS + section_of(i), sensor(f"seg{i}_touch{a}")] = 1
+
+        # every joint but the free one gets a start nudge proportional to its range (a slide only moves centimeters)
+        joint_ids = np.arange(1, m.njnt)
+        self.joint_qpos = m.jnt_qposadr[joint_ids]
+        self.joint_noise = self.initial_noise * (m.jnt_range[joint_ids, 1] - m.jnt_range[joint_ids, 0]) / 2
+
+        self.muscles = np.isin(m.actuator_trntype, [mujoco.mjtTrn.mjTRN_JOINT, mujoco.mjtTrn.mjTRN_TENDON])
+        self.jet = m.actuator("jet").id
+        self.max_thrust = m.actuator_gear[self.jet][2]
+        self.siphon_qpos = m.jnt_qposadr[m.joint("siphon_aim").id]
         self.mantle_water = 1.0
         self.stamina = 1.0
-        self.dt = self.model.opt.timestep * self.physics_steps
+        self.dt = m.opt.timestep * self.physics_steps
         self.target = np.zeros(2)
 
-        self.action_space = gym.spaces.Box(-1.0, 1.0, (self.model.nu,), np.float32)
+        self.action_space = gym.spaces.Box(-1.0, 1.0, (self.n_actions,), np.float32)
         observation_size = self._observe().size
         self.observation_space = gym.spaces.Box(-np.inf, np.inf, (observation_size,), np.float32)
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         mujoco.mj_resetData(self.model, self.data)
-
-        n_joints = self.model.nq - 7
-        self.data.qpos[7:] += self.np_random.uniform(-self.initial_noise, self.initial_noise, n_joints)
+        self.data.qpos[self.joint_qpos] += self.np_random.uniform(-1, 1, self.joint_noise.size) * self.joint_noise
 
         angle = self.np_random.uniform(0, 2 * np.pi)
         distance = self.np_random.uniform(*self.target_distance)
@@ -102,15 +137,15 @@ class OctopusEnv(gym.Env):
         mujoco.mj_forward(self.model, self.data)
         self.step_count = 0
         self.distance = self._distance_to_target()
-        self.previous_action = np.zeros(self.model.nu)
+        self.previous_action = np.zeros(self.n_actions)
         self.mantle_water = 1.0
         self.stamina = 1.0
         return self._observe(), {}
 
     def step(self, action):
         action = np.clip(action, -1.0, 1.0)
-        low, high = self.motor_limits.T
-        self.data.ctrl[self.motor_order] = low + (action + 1) / 2 * (high - low)
+        low, high = self.model.actuator_ctrlrange.T
+        self.data.ctrl[:] = low + (action[self.action_of_motor] + 1) / 2 * (high - low)
         self._squirt()
         mujoco.mj_step(self.model, self.data, nstep=self.physics_steps)
         self.step_count += 1
@@ -129,7 +164,7 @@ class OctopusEnv(gym.Env):
             "height": self.data.xpos[self.torso][2],
             "spin": self.data.qvel[5],
             "power": self._metabolic_power(),
-            "tips_touching": (self.data.sensordata > 1.0).mean(),
+            "tips_touching": (self._section_touch()[:, -1] > self.tip_touch).mean(),
             "airborne": self.data.ncon == 0,
             "facing": self._facing_target(),
             "dt": self.dt,
@@ -159,7 +194,7 @@ class OctopusEnv(gym.Env):
             self.viewer = None
 
     def _metabolic_power(self):
-        # joint muscles: work done pushing costs 1/0.25, work absorbed braking costs 1/1.2 (suckers hold for free)
+        # arm and siphon muscles: work done pushing costs 1/0.25, work absorbed braking costs 1/1.2 (suckers hold for free)
         work = (self.data.actuator_force * self.data.actuator_velocity)[self.muscles]
         muscles = work.clip(min=0).sum() / self.muscle_efficiency - work.clip(max=0).sum() / self.braking_efficiency
         return muscles + self._jet_power() / self.muscle_efficiency + self.basal_power
@@ -185,6 +220,9 @@ class OctopusEnv(gym.Env):
         area = np.pi * self.funnel_radius ** 2
         return thrust * np.sqrt(thrust / (self.model.opt.density * area)) / 2
 
+    def _section_touch(self):
+        return (self.touch_to_section @ self.data.sensordata).reshape(self.n_arms, SECTIONS)
+
     def _facing_target(self):
         # cosine of the angle between where the eyes point (the body's +x) and the target, on the floor plane
         rotation = self.data.xmat[self.torso].reshape(3, 3)
@@ -199,11 +237,11 @@ class OctopusEnv(gym.Env):
         position = self.data.xpos[self.torso]
         target_3d = np.array([*self.target, 0.0])
 
-        per_arm = np.concatenate([
-            self.data.qpos[7:self.siphon_qpos].reshape(self.n_arms, -1),
-            self.data.qvel[6:self.siphon_qvel].reshape(self.n_arms, -1) / self.joint_velocity_scale,
-            self.data.sensordata.reshape(self.n_arms, -1) / self.touch_scale,
-        ], axis=1)
+        per_section = np.concatenate([
+            self.data.ten_length[self.section_muscles] / self.muscle_reach,
+            self.data.ten_velocity[self.section_muscles] * self.muscle_speed_time / self.muscle_reach,
+            self._section_touch()[..., None] / self.touch_scale,
+        ], axis=2)
 
         target_seen = rotation.T @ (target_3d - position)
         up_seen = rotation.T @ [0.0, 0.0, 1.0]
@@ -213,7 +251,7 @@ class OctopusEnv(gym.Env):
         siphon = [self.data.qpos[self.siphon_qpos] / np.pi, self.mantle_water, self.stamina]
 
         return np.concatenate([
-            per_arm.ravel(),
+            per_section.ravel(),
             target_seen,
             up_seen,
             torso_velocity,

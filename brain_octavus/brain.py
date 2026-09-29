@@ -6,7 +6,7 @@ class Octavus_brain(nn.Module):
     def __init__(self):
         super().__init__()
         
-        n_arms, n_arm_x, n_body_x, n_arm_y, n_jet = 8, 11, 14, 6, 2
+        n_arms, n_arm_x, n_body_x, n_arm_y, n_jet = 8, 36, 14, 20, 2
         
         self.n_arms = n_arms
         self.n_arm_x = n_arm_x
@@ -18,21 +18,21 @@ class Octavus_brain(nn.Module):
         n_x_for_neural = n_jet + n_body_x + n_arm_x * n_arms
         
         self.arm = nn.Sequential(
-            nn.Linear(n_x_for_neural, 256),
+            nn.Linear(n_x_for_neural, 512),
             nn.Tanh(),
-            nn.Linear(256, 256),
+            nn.Linear(512, 512),
             nn.Tanh(),
-            nn.Linear(256, n_arm_y * n_arms + n_jet),
+            nn.Linear(512, n_arm_y * n_arms + n_jet),
             nn.Tanh()
         )
         
         
         self.critic = nn.Sequential(
-            nn.Linear(n_x_for_neural, 256),
+            nn.Linear(n_x_for_neural, 512),
             nn.Tanh(),
-            nn.Linear(256, 256),
+            nn.Linear(512, 512),
             nn.Tanh(),
-            nn.Linear(256, 1)
+            nn.Linear(512, 1)
             
         )
         n_exploration = n_arm_y + n_jet
@@ -42,8 +42,8 @@ class Octavus_brain(nn.Module):
    
         gross_y = self.arm(x)
         
-        arms = self.exploration[:6].repeat(self.n_arms) #each arm recive the same draw
-        jets = self.exploration[6:]
+        arms = self.exploration[:20].repeat(self.n_arms) #each arm recive the same draw
+        jets = self.exploration[20:]
         exp_format = torch.cat([arms, jets])
         
         variation = exp_format.exp()

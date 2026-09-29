@@ -16,6 +16,7 @@ Action (162 numbers between -1 and 1), the arms first and the siphon last:
     action[:160].reshape(8, 4, 5) -> per arm, per section: bend_up, bend_side, twist, stretch, sucker
                                      (one sucker number drives the suckers of all the section's segments)
     action[160], action[161]      -> siphon: siphon_aim (where the funnel points), jet (how hard it squirts)
+    0 is always "no force" (relaxed muscle, loose sucker, no jet); suckers and jet treat anything below 0 as off
 
 The jet squirts the water in the mantle: a full jet empties it in 1 s, and it refills in 2 s while the jet rests.
 Jetting also stops the octopus's systemic heart, so it tires: 3 s of full jet in total, back after 30 s of rest.
@@ -115,6 +116,8 @@ class OctopusEnv(gym.Env):
         self.joint_qpos = m.jnt_qposadr[joint_ids]
         self.joint_noise = self.initial_noise * (m.jnt_range[joint_ids, 1] - m.jnt_range[joint_ids, 0]) / 2
 
+        # step() maps the brain's 0 to "no force", which needs every motor's range to include 0
+        assert (m.actuator_ctrlrange[:, 0] <= 0).all() and (m.actuator_ctrlrange[:, 1] >= 0).all()
         self.muscles = np.isin(m.actuator_trntype, [mujoco.mjtTrn.mjTRN_JOINT, mujoco.mjtTrn.mjTRN_TENDON])
         # for the holding cost: how much muscle each motor has (a section's mass is shared by its 4 muscles)
         # and its full force, to turn the force it makes into an activation from 0 to 1
@@ -160,8 +163,11 @@ class OctopusEnv(gym.Env):
 
     def step(self, action):
         action = np.clip(action, -1.0, 1.0)
+        # 0 from the brain is always "no force": 0..1 scales up to the motor's top, 0..-1 down to its bottom.
+        # Suckers and jet only go 0..1, so anything at or below 0 is off (before, 0 meant half suction and half jet)
         low, high = self.model.actuator_ctrlrange.T
-        self.data.ctrl[:] = low + (action[self.action_of_motor] + 1) / 2 * (high - low)
+        wanted = action[self.action_of_motor]
+        self.data.ctrl[:] = np.where(wanted >= 0, wanted * high, wanted * -low)
         self._squirt()
         mujoco.mj_step(self.model, self.data, nstep=self.physics_steps)
         self.step_count += 1

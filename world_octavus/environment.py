@@ -21,7 +21,8 @@ The jet squirts the water in the mantle: a full jet empties it in 1 s, and it re
 Jetting also stops the octopus's systemic heart, so it tires: 3 s of full jet in total, back after 30 s of rest.
 
 power is the metabolic cost in watts, what the food pays for: muscles pushing cost 4x their work (25% efficient),
-muscles braking 1/1.2 of it, holding suckers nothing, the jet its hydrodynamic power at 25%, plus 2.7 W just to be alive.
+muscles braking 1/1.2 of it, holding force 10 W per kg of muscle at full force (even when nothing moves),
+holding suckers nothing, the jet its hydrodynamic power at 25%, plus 2.7 W just to be alive.
 
 The reward is not decided here: the trainer passes a function reward_fn(info) -> float,
 and the environment hands over the facts of each step in the info dict:
@@ -67,6 +68,9 @@ class OctopusEnv(gym.Env):
     muscle_efficiency = 0.25
     braking_efficiency = 1.2
     basal_power = 2.7  # resting O2 use of a 32 kg octopus
+    # W per kg of muscle held at full force, even without moving (estimate: mammal muscle models use
+    # tens of W/kg at 37 C, and an octopus is cold-blooded, in ~20 C water)
+    holding_rate = 10.0
 
     def __init__(self, reward_fn=None, render_mode=None, xml=XML):
         self.model = mujoco.MjModel.from_xml_path(str(xml))
@@ -112,6 +116,18 @@ class OctopusEnv(gym.Env):
         self.joint_noise = self.initial_noise * (m.jnt_range[joint_ids, 1] - m.jnt_range[joint_ids, 0]) / 2
 
         self.muscles = np.isin(m.actuator_trntype, [mujoco.mjtTrn.mjTRN_JOINT, mujoco.mjtTrn.mjTRN_TENDON])
+        # for the holding cost: how much muscle each motor has (a section's mass is shared by its 4 muscles)
+        # and its full force, to turn the force it makes into an activation from 0 to 1
+        self.muscle_mass = np.zeros(m.nu)
+        for i in np.flatnonzero(self.muscles):
+            target = m.actuator_trnid[i][0]
+            if m.actuator_trntype[i] == mujoco.mjtTrn.mjTRN_TENDON:
+                bodies = np.unique(m.jnt_bodyid[joints[target]])
+                self.muscle_mass[i] = m.body_mass[bodies].sum() / len(MUSCLES)
+            else:
+                self.muscle_mass[i] = m.body_mass[m.jnt_bodyid[target]]
+        self.max_force = np.where(m.actuator_forcelimited.astype(bool),
+                                  np.abs(m.actuator_forcerange).max(axis=1), np.abs(m.actuator_ctrlrange).max(axis=1))
         self.jet = m.actuator("jet").id
         self.max_thrust = m.actuator_gear[self.jet][2]
         self.siphon_qpos = m.jnt_qposadr[m.joint("siphon_aim").id]
@@ -197,9 +213,13 @@ class OctopusEnv(gym.Env):
 
     def _metabolic_power(self):
         # arm and siphon muscles: work done pushing costs 1/0.25, work absorbed braking costs 1/1.2 (suckers hold for free)
-        work = (self.data.actuator_force * self.data.actuator_velocity)[self.muscles]
+        force = self.data.actuator_force
+        work = (force * self.data.actuator_velocity)[self.muscles]
         muscles = work.clip(min=0).sum() / self.muscle_efficiency - work.clip(max=0).sum() / self.braking_efficiency
-        return muscles + self._jet_power() / self.muscle_efficiency + self.basal_power
+        # holding force costs even when nothing moves (without this, a muscle clenched at full force was free)
+        activation = np.abs(force[self.muscles]) / self.max_force[self.muscles]
+        holding = self.holding_rate * (activation * self.muscle_mass[self.muscles]).sum()
+        return muscles + holding + self._jet_power() / self.muscle_efficiency + self.basal_power
 
     def _squirt(self):
         # the mantle is a pump: it squirts while it has water and only refills while the jet is relaxed.

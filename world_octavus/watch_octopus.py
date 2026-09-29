@@ -12,7 +12,7 @@ from pathlib import Path
 
 import torch
 
-from brain_octavus.brain import Octavus_brain, SimpleBrain
+from brain_octavus.brain import Octavus_brain
 from world_octavus.environment import OctopusEnv
 
 CHECKPOINT = Path(__file__).resolve().parents[1] / "octavus.pt"
@@ -31,19 +31,11 @@ def load_latest(brain):
         return False
 
 
-def build_brain():
-    # the checkpoint tells which brain it came from: shared arm network or a single network for the whole body
-    weights = torch.load(CHECKPOINT)
-    if "arm.0.weight" in weights:
-        return Octavus_brain()
-    return SimpleBrain(weights["body.0.weight"].shape[1], weights["body.4.weight"].shape[0])
-
-
 if not CHECKPOINT.exists():
     raise SystemExit(f"no {CHECKPOINT.name} yet: run the training first (uv run brain_octavus/train.py)")
 
 env = OctopusEnv(render_mode="human")
-brain = build_brain()
+brain = Octavus_brain()
 load_latest(brain)
 x, _ = env.reset()
 steps = 0

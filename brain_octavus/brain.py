@@ -54,7 +54,7 @@ class Octavus_brain(nn.Module):
         variation = self.exploration.exp().repeat(self.n_arms)
         distribuition = torch.distributions.Normal(gross_y, variation)
         draw_y = distribuition.sample()
-        return draw_y
+        return draw_y, distribuition
 
 
 class SimpleBrain(nn.Module):

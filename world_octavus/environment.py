@@ -11,7 +11,8 @@ Action (32 numbers between -1 and 1), also grouped by arm:
     action.reshape(8, 4)   -> one row per arm: shoulder_swing, shoulder_lift, elbow, sucker
 
 The reward is not decided here: the trainer passes a function reward_fn(info) -> float,
-and the environment hands over the facts of each step in the info dict.
+and the environment hands over the facts of each step in the info dict:
+distance, previous_distance, reached, flipped, action, previous_action, vertical_speed, dt.
 
 Watch the octopus moving randomly (on macOS the viewer needs mjpython):
     uv run mjpython world_octavus/environment.py
@@ -36,6 +37,10 @@ class OctopusEnv(gym.Env):
     target_radius = 0.25
     target_distance = (1.5, 3.0)
     initial_noise = 0.1
+    # keep every observation number close to 1, so the brain's Tanh layers don't saturate
+    joint_velocity_scale = 10.0
+    touch_scale = 100.0
+    spin_scale = 5.0
 
     def __init__(self, reward_fn=None, render_mode=None):
         self.model = mujoco.MjModel.from_xml_path(str(XML))
@@ -69,6 +74,7 @@ class OctopusEnv(gym.Env):
         mujoco.mj_forward(self.model, self.data)
         self.step_count = 0
         self.distance = self._distance_to_target()
+        self.previous_action = np.zeros(self.model.nu)
         return self._observe(), {}
 
     def step(self, action):
@@ -87,9 +93,12 @@ class OctopusEnv(gym.Env):
             "reached": reached,
             "flipped": flipped,
             "action": action,
+            "previous_action": self.previous_action,
+            "vertical_speed": self.data.qvel[2],
             "dt": self.dt,
         }
         reward = self.reward_fn(info) if self.reward_fn else 0.0
+        self.previous_action = action
         terminated = reached or flipped
         truncated = self.step_count >= self.max_steps
 
@@ -122,14 +131,14 @@ class OctopusEnv(gym.Env):
 
         per_arm = np.concatenate([
             self.data.qpos[7:].reshape(self.n_arms, -1),
-            self.data.qvel[6:].reshape(self.n_arms, -1),
-            self.data.sensordata.reshape(self.n_arms, -1),
+            self.data.qvel[6:].reshape(self.n_arms, -1) / self.joint_velocity_scale,
+            self.data.sensordata.reshape(self.n_arms, -1) / self.touch_scale,
         ], axis=1)
 
         target_seen = rotation.T @ (target_3d - position)
         up_seen = rotation.T @ [0.0, 0.0, 1.0]
         torso_velocity = rotation.T @ self.data.qvel[:3]
-        torso_spin = self.data.qvel[3:6]
+        torso_spin = self.data.qvel[3:6] / self.spin_scale
         height = [position[2]]
 
         return np.concatenate([

@@ -21,3 +21,7 @@ build-backend = "uv_build"
 module-name = ["brain_octavus", "world_octavus"]
 module-root = ""
 namespace = true
+
+[tool.pylint.main]
+# mujoco is compiled C: pylint has to import it to see its members, or every mujoco.X is a false "no member" error
+extension-pkg-allow-list = ["mujoco"]

@@ -22,8 +22,8 @@ class Octavus_brain(nn.Module):
             nn.Tanh(),
             nn.Linear(256, 256),
             nn.Tanh(),
-            nn.Linear(256, n_arm_y * n_arms + n_jet)
-        
+            nn.Linear(256, n_arm_y * n_arms + n_jet),
+            nn.Tanh()
         )
         
         

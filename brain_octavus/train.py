@@ -81,7 +81,7 @@ for lap in range(n_laps):
             #mean turns all the error into a average
             arm_loss = -torch.min(ratio * advantages[chunk], clipped_ratio * advantages[chunk]).mean()
             pre_tanh = brain.arm[:-1](xs[chunk]) #every layer but the last
-            saturation = ((pre_tanh.abs() -2).clamp(min=0) ** 2).mean()#clamp everthing that pass the limit(min) turn into it
+            saturation = ((pre_tanh.abs() -2).clamp(min=0) ** 2).mean()#clamp: what goes below the min turns into the min, gives back a copy (clamp_ changes it in place)
             #loss is the amount of errors loss=error or amount of gradiant or fault
             loss = arm_loss + 0.5 * critic_loss  + 0.01 * saturation
             #the optimizer just try to get this small so when this is big
@@ -93,6 +93,7 @@ for lap in range(n_laps):
             loss.backward() # the gradient is stored in the onw weight
             #adjust the weights
             optimizer.step()
+            brain.exploration.data.clamp_(max=0.0)#this clamp
 
     print(f"lap {lap}: reward {sum(memory_reward):+.1f} | reached {reached} | exploration {brain.exploration.exp().mean():.2f}", flush=True)
     if lap % 10 == 0:

@@ -29,6 +29,9 @@ PULL = 40.0  # newtons, the longitudinal muscles at the base; thinner sections p
 TWIST_SHARE = 0.25  # oblique muscles are a thin layer: a quarter of the bending strength
 GRIP = 120.0  # newtons of sucker adhesion per arm, spread by sucker size
 BUOYANCY = 0.952  # an octopus is ~5% denser than sea water: the water holds 1/1.05 of its weight
+# the head carries the mantle, a sac full of sea water (which weighs nothing in water), so it is almost neutral:
+# only the organs pull it down a little. With the arms' 0.952, lying sideways it nosedived (27 deg in 2 s; now 16)
+MANTLE_BUOYANCY = 0.99
 DAMPING = 0.05  # seconds: each spring's damping is its stiffness times this, so the arm doesn't ring
 
 XML = Path(__file__).resolve().parent / "octopus.xml"
@@ -142,11 +145,12 @@ def octopus():
       <geom class="visual" type="cylinder" size="0.12 0.005" rgba="1 0.25 0.2 0.7"/>
     </body>
 
-    <body name="torso" pos="0 0 0.19" gravcomp="{BUOYANCY}">
+    <body name="torso" pos="0 0 0.19" gravcomp="{MANTLE_BUOYANCY}">
       <freejoint name="root"/>
       <camera name="follow" mode="trackcom" pos="0 -1.8 1.1" xyaxes="1 0 0 0 0.53 0.848"/>
       <geom name="head" type="sphere" size="0.12"/>
-      <geom name="mantle" class="visual" type="ellipsoid" size="0.15 0.13 0.2" pos="-0.1 0 0.14" euler="0 -35 0"/>
+      <!-- octopus mantle: arms are 3-5x its length, so ~20 cm for 60 cm arms (the old 40 cm one looked like a squid) -->
+      <geom name="mantle" class="visual" type="ellipsoid" size="0.11 0.1 0.1" pos="-0.07 0 0.09" euler="0 -35 0"/>
       <geom name="web" class="visual" type="ellipsoid" size="0.2 0.2 0.035" pos="0 0 -0.07"/>
       <!-- eyes on the sides of the head, looking sideways, with the octopus's horizontal slit pupil -->
       <geom class="visual" material="eye" type="sphere" size="0.036" pos="0 0.105 0.06"/>

@@ -6,16 +6,17 @@ Each episode the octopus starts at the center and the target appears in a random
 Each arm is a soft tentacle (see build_octopus.py): 16 segments in 4 sections, and each section has 4 muscles
 (bend up/down, bend sideways, twist, stretch/shorten) plus the suckers of its segments.
 
-Observation (304 numbers):
+Observation (305 numbers):
     obs[:288].reshape(8, 4, 9) -> per arm, per section: where its 4 muscles are (-1 to 1 of their reach),
                                   how fast they move, and how hard the section touches something
     obs[288:]                  -> body: target (3), up (3), velocity (3), spin (3), height (1),
-                                  siphon angle (1), mantle water (1), jet stamina (1)
+                                  siphon aim (1), siphon tilt (1), mantle water (1), jet stamina (1)
 
-Action (162 numbers between -1 and 1), the arms first and the siphon last:
+Action (163 numbers between -1 and 1), the arms first and the siphon last:
     action[:160].reshape(8, 4, 5) -> per arm, per section: bend_up, bend_side, twist, stretch, sucker
                                      (one sucker number drives the suckers of all the section's segments)
-    action[160], action[161]      -> siphon: siphon_aim (where the funnel points), jet (how hard it squirts)
+    action[160:163]               -> siphon: siphon_aim (funnel left/right), siphon_tilt (funnel up/down),
+                                     jet (how hard it squirts)
     0 is always "no force" (relaxed muscle, loose sucker, no jet); suckers and jet treat anything below 0 as off
 
 The jet squirts the water in the mantle: a full jet empties it in 1 s, and it refills in 2 s while the jet rests.
@@ -93,7 +94,7 @@ class OctopusEnv(gym.Env):
             for k in range(SECTIONS):
                 drives += [[motor[f"sec{k}_{kind}{a}"]] for kind in MUSCLES]
                 drives.append([motor[f"seg{i}_sucker{a}"] for i in range(SEGMENTS) if section_of(i) == k])
-        drives += [[motor["siphon_aim"]], [motor["jet"]]]
+        drives += [[motor["siphon_aim"]], [motor["siphon_tilt"]], [motor["jet"]]]
         self.action_of_motor = np.zeros(m.nu, dtype=int)
         for number, motors in enumerate(drives):
             self.action_of_motor[motors] = number
@@ -134,6 +135,8 @@ class OctopusEnv(gym.Env):
         self.jet = m.actuator("jet").id
         self.max_thrust = m.actuator_gear[self.jet][2]
         self.siphon_qpos = m.jnt_qposadr[m.joint("siphon_aim").id]
+        self.siphon_tilt_qpos = m.jnt_qposadr[m.joint("siphon_tilt").id]
+        self.siphon_tilt_reach = m.jnt_range[m.joint("siphon_tilt").id][1]  # 45 degrees, in radians
         self.mantle_water = 1.0
         self.stamina = 1.0
         self.dt = m.opt.timestep * self.physics_steps
@@ -276,7 +279,10 @@ class OctopusEnv(gym.Env):
         torso_velocity = rotation.T @ self.data.qvel[:3]
         torso_spin = self.data.qvel[3:6] / self.spin_scale
         height = [position[2]]
-        siphon = [self.data.qpos[self.siphon_qpos] / np.pi, self.mantle_water, self.stamina]
+        siphon = [self.data.qpos[self.siphon_qpos] / np.pi,
+                  self.data.qpos[self.siphon_tilt_qpos] / self.siphon_tilt_reach,
+                  self.mantle_water,
+                  self.stamina]
 
         return np.concatenate([
             per_section.ravel(),

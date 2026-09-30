@@ -19,7 +19,8 @@ Action (163 numbers between -1 and 1), the arms first and the siphon last:
                                      jet (how hard it squirts)
     0 is always "no force" (relaxed muscle, loose sucker, no jet); suckers and jet treat anything below 0 as off
 
-The jet squirts the water in the mantle: a full jet empties it in 1 s, and it refills in 2 s while the jet rests.
+The jet squirts the water in the mantle: a full jet empties it in 1 s, and it refills in 2 s while the jet rests
+(refilling only starts after 0.3 s relaxed in a row, so a squirt is a real squeeze, not a flicker).
 Jetting also stops the octopus's systemic heart, so it tires: 3 s of full jet in total, back after 30 s of rest.
 
 power is the metabolic cost in watts, what the food pays for: muscles pushing cost 4x their work (25% efficient),
@@ -64,6 +65,9 @@ class OctopusEnv(gym.Env):
     jet_empty_time = 1.0
     jet_refill_time = 2.0
     jet_relaxed = 0.05
+    # the mantle only starts drawing water after this long relaxed in a row (estimate, in the range of an
+    # octopus/squid jet cycle); without it, flicking the jet on and off every step gave a smooth nonstop jet
+    jet_refill_delay = 0.3
     jet_stamina_time = 3.0
     jet_recovery_time = 30.0
     funnel_radius = 0.02  # same as the siphon capsule in octopus.xml
@@ -139,6 +143,7 @@ class OctopusEnv(gym.Env):
         self.siphon_tilt_reach = m.jnt_range[m.joint("siphon_tilt").id][1]  # 45 degrees, in radians
         self.mantle_water = 1.0
         self.stamina = 1.0
+        self.relaxed_time = 0.0
         self.dt = m.opt.timestep * self.physics_steps
         self.target = np.zeros(2)
 
@@ -162,6 +167,7 @@ class OctopusEnv(gym.Env):
         self.previous_action = np.zeros(self.n_actions)
         self.mantle_water = 1.0
         self.stamina = 1.0
+        self.relaxed_time = 0.0
         return self._observe(), {}
 
     def step(self, action):
@@ -231,8 +237,8 @@ class OctopusEnv(gym.Env):
         return muscles + holding + self._jet_power() / self.muscle_efficiency + self.basal_power
 
     def _squirt(self):
-        # the mantle is a pump: it squirts while it has water and only refills while the jet is relaxed.
-        # Jetting also stops the heart, so a stamina runs out and only comes back while resting
+        # the mantle is a pump: it squirts while it has water and only refills once the jet has been relaxed
+        # for a moment. Jetting also stops the heart, so a stamina runs out and only comes back while resting
         requested = self.data.ctrl[self.jet]
         drain = self.dt / self.jet_empty_time
         tire = self.dt / self.jet_stamina_time
@@ -242,6 +248,10 @@ class OctopusEnv(gym.Env):
         self.mantle_water = max(0.0, self.mantle_water - jet * drain)
         self.stamina = max(0.0, self.stamina - jet * tire)
         if requested < self.jet_relaxed:
+            self.relaxed_time += self.dt
+        else:
+            self.relaxed_time = 0.0
+        if self.relaxed_time >= self.jet_refill_delay:
             self.mantle_water = min(1.0, self.mantle_water + self.dt / self.jet_refill_time)
             self.stamina = min(1.0, self.stamina + self.dt / self.jet_recovery_time)
 

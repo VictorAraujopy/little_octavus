@@ -78,8 +78,12 @@ for lap in range(n_laps):
         #some action
         #mean turns all the error into a average
         arm_loss = -torch.min(ratio * advantages, clipped_ratio * advantages).mean()
+        pre_tanh = brain.arm[:-1](xs) #every layer but the last
+        saturation = ((pre_tanh.abs() -2).clamp(min=0) ** 2).mean()#clamp everthing that pass the limit(min) turn into it
         #loss is the amount of errors loss=error or amount of gradiant or fault
-        loss = arm_loss + 0.5 * critic_loss
+        loss = arm_loss + 0.5 * critic_loss  + 0.01 * saturation
+        #the optimizer just try to get this small so when this is big
+        #it will adjust the weights to get it small
 
         #clean the last turn grade
         optimizer.zero_grad()

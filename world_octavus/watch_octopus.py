@@ -5,6 +5,7 @@ and see it improve without restarting.
 
 Run (on macOS the viewer needs mjpython):  uv run mjpython world_octavus/watch_octopus.py
 With exploration (the random tries the trainer sees):  add --explore
+Targets as close as the training's right now (its curriculum), instead of the real 3-6 m:  add --close
 """
 
 import sys
@@ -13,10 +14,11 @@ from pathlib import Path
 import torch
 
 from brain_octavus.brain import Octavus_arms_brain
-from world_octavus.environment import OctopusEnv
+from world_octavus.environment import CURRICULUM_FILE, OctopusEnv
 
 CHECKPOINT = Path(__file__).resolve().parents[1] / "octavus.pt"
 explore = "--explore" in sys.argv
+close = "--close" in sys.argv
 
 
 def load_latest(brain):
@@ -31,6 +33,12 @@ def load_latest(brain):
         return False
 
 
+def follow_training_distance(env):
+    # --close: targets as far as the training's curriculum is now (only reads curriculum.txt, never writes it)
+    if close and CURRICULUM_FILE.exists():
+        env.farthest = float(CURRICULUM_FILE.read_text())
+
+
 if not CHECKPOINT.exists():
     raise SystemExit(f"no {CHECKPOINT.name} yet: run the training first (uv run brain_octavus/train.py)")
 
@@ -38,6 +46,7 @@ if not CHECKPOINT.exists():
 env = OctopusEnv(render_mode="human", curriculum=False)
 brain = Octavus_arms_brain()
 load_latest(brain)
+follow_training_distance(env)
 x, _ = env.reset()
 steps = 0
 
@@ -52,6 +61,7 @@ while env.viewer is None or env.viewer.is_running():
         result = "REACHED the target" if info["reached"] else "flipped over" if info["flipped"] else "time's up"
         print(f"{result} after {steps} steps ({steps * env.dt:.1f}s), {info['distance']:.2f} m from the target")
         load_latest(brain)
+        follow_training_distance(env)
         x, _ = env.reset()
         steps = 0
 env.close()

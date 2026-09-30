@@ -40,6 +40,10 @@ uv run brain_octavus/train.py
 uv run mjpython world_octavus/watch_octopus.py
 uv run mjpython world_octavus/watch_octopus.py --explore   # with the random tries the trainer sees
 
+# measure how the trained octopus is doing (reached, energy, jet, saturation...);
+# every run adds a row to measurements.csv to compare over time
+uv run world_octavus/measure_octopus.py
+
 # watch the untrained octopus flail around
 uv run mjpython world_octavus/environment.py
 

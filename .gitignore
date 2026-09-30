@@ -16,3 +16,4 @@ CLAUDE.md
 *.pt
 
 MUJOCO_LOG.TXT
+measurements.csv

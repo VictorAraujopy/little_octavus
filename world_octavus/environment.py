@@ -1,7 +1,10 @@
 """
 Octavus environment in the Gymnasium format: the octopus has to walk to a target on the sea floor.
 
-Each episode the octopus starts at the center and the target appears in a random direction.
+Each episode the octopus starts at the center and the target appears in a random direction, 3-6 m away.
+With curriculum=True (the default, used by training) targets start close, 0.5-1 m, and move out 0.5 m each time
+it reaches at least half of its last 20 targets, until they are back at 3-6 m. The current level is printed
+and saved to curriculum.txt in the project root.
 
 Each arm is a soft tentacle (see build_octopus.py): 16 segments in 4 sections, and each section has 4 muscles
 (bend up/down, bend sideways, twist, stretch/shorten) plus the suckers of its segments.
@@ -36,6 +39,7 @@ Watch the octopus moving randomly (on macOS the viewer needs mjpython):
 """
 
 import time
+from collections import deque
 from pathlib import Path
 
 import gymnasium as gym
@@ -46,6 +50,7 @@ import numpy as np
 from world_octavus.build_octopus import SECTIONS, SEGMENTS, section_of
 
 XML = Path(__file__).resolve().parent / "octopus.xml"
+CURRICULUM_FILE = Path(__file__).resolve().parents[1] / "curriculum.txt"
 MUSCLES = ("bend_up", "bend_side", "twist", "stretch")
 
 
@@ -56,6 +61,11 @@ class OctopusEnv(gym.Env):
     max_steps = 2000
     target_radius = 0.15
     target_distance = (3.0, 6.0)
+    # curriculum: a target always lands between half and all of the current farthest distance
+    curriculum_first_far = 1.0  # meters: close enough to bump into while it's still learning to move
+    curriculum_step = 0.5  # how much farther each level goes, up to target_distance's 6 m
+    curriculum_window = 20  # episodes looked at to decide
+    curriculum_pass = 0.5  # share of those it must reach to level up
     initial_noise = 0.1  # fraction of each joint's range
     # keep every observation number close to 1, so the brain's Tanh layers don't saturate
     muscle_speed_time = 0.1  # a muscle crossing its whole reach in 0.1 s reads 1
@@ -78,13 +88,19 @@ class OctopusEnv(gym.Env):
     # tens of W/kg at 37 C, and an octopus is cold-blooded, in ~20 C water)
     holding_rate = 10.0
 
-    def __init__(self, reward_fn=None, render_mode=None, xml=XML):
+    def __init__(self, reward_fn=None, render_mode=None, xml=XML, curriculum=True):
         self.model = mujoco.MjModel.from_xml_path(str(xml))
         self.data = mujoco.MjData(self.model)
         self.reward_fn = reward_fn
         self.render_mode = render_mode
         self.viewer = None
         m = self.model
+
+        self.curriculum = curriculum
+        self.farthest = self.curriculum_first_far if curriculum else self.target_distance[1]
+        self.recent_reached = deque(maxlen=self.curriculum_window)
+        if curriculum:
+            CURRICULUM_FILE.write_text(f"{self.farthest}\n")
 
         self.torso = m.body("torso").id
         self.n_arms = sum(m.body(i).name.startswith("arm") for i in range(m.nbody))
@@ -157,7 +173,8 @@ class OctopusEnv(gym.Env):
         self.data.qpos[self.joint_qpos] += self.np_random.uniform(-1, 1, self.joint_noise.size) * self.joint_noise
 
         angle = self.np_random.uniform(0, 2 * np.pi)
-        distance = self.np_random.uniform(*self.target_distance)
+        self._level_up_if_ready()
+        distance = self.np_random.uniform(self.farthest / 2, self.farthest)
         self.target = distance * np.array([np.cos(angle), np.sin(angle)])
         self.data.mocap_pos[0][:2] = self.target
 
@@ -206,6 +223,8 @@ class OctopusEnv(gym.Env):
         # a way out whenever living scored negative
         terminated = reached
         truncated = self.step_count >= self.max_steps
+        if terminated or truncated:
+            self.recent_reached.append(bool(reached))
 
         if self.render_mode == "human":
             self.render()
@@ -235,6 +254,17 @@ class OctopusEnv(gym.Env):
         activation = np.abs(force[self.muscles]) / self.max_force[self.muscles]
         holding = self.holding_rate * (activation * self.muscle_mass[self.muscles]).sum()
         return muscles + holding + self._jet_power() / self.muscle_efficiency + self.basal_power
+
+    def _level_up_if_ready(self):
+        # moves the targets out once it reaches at least half of its last 20; the new level starts a fresh count
+        full_window = len(self.recent_reached) == self.curriculum_window
+        if not (self.curriculum and full_window and self.farthest < self.target_distance[1]):
+            return
+        if np.mean(self.recent_reached) >= self.curriculum_pass:
+            self.farthest = min(self.farthest + self.curriculum_step, self.target_distance[1])
+            self.recent_reached.clear()
+            CURRICULUM_FILE.write_text(f"{self.farthest}\n")
+            print(f"curriculum: targets now {self.farthest / 2:.2f}-{self.farthest:.2f} m away", flush=True)
 
     def _squirt(self):
         # the mantle is a pump: it squirts while it has water and only refills once the jet has been relaxed

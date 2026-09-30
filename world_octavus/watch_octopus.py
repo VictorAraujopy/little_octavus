@@ -34,7 +34,8 @@ def load_latest(brain):
 if not CHECKPOINT.exists():
     raise SystemExit(f"no {CHECKPOINT.name} yet: run the training first (uv run brain_octavus/train.py)")
 
-env = OctopusEnv(render_mode="human")
+# curriculum off: shows the real task (targets 3-6 m) and leaves curriculum.txt to the training
+env = OctopusEnv(render_mode="human", curriculum=False)
 brain = Octavus_arms_brain()
 load_latest(brain)
 x, _ = env.reset()

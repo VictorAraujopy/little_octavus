@@ -20,7 +20,7 @@ import torch
 from brain_octavus.brain import Octavus_arms_brain
 from brain_octavus.reward import reward
 from world_octavus.build_octopus import SECTIONS
-from world_octavus.environment import OctopusEnv
+from world_octavus.environment import CURRICULUM_FILE, OctopusEnv
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECKPOINT = ROOT / "octavus.pt"
@@ -35,7 +35,9 @@ def main():
     if not CHECKPOINT.exists():
         raise SystemExit(f"no {CHECKPOINT.name} yet: run the training first (uv run brain_octavus/train.py)")
 
-    env = OctopusEnv(reward_fn=reward)
+    # curriculum off: always the real task (targets 3-6 m), so every row compares; it also keeps this run from
+    # rewriting curriculum.txt, which belongs to the training
+    env = OctopusEnv(reward_fn=reward, curriculum=False)
     brain = Octavus_arms_brain()
     brain.load_state_dict(torch.load(CHECKPOINT))
     suckers = [i for i in range(env.model.nu) if env.model.actuator_trntype[i] == mujoco.mjtTrn.mjTRN_BODY]
@@ -143,6 +145,8 @@ def main():
         "touching_pct": round(float(np.mean(touching)) * 100, 1),
         # [brain] exploration (size of the random tries). 1.0 at birth, dropping slowly is normal; ~0.03 = stopped trying
         "exploration": round(float(brain.exploration.detach().exp().mean()), 2),
+        # [training] how far the training's targets are right now (curriculum). 1 m at the start, 6 m = the real task
+        "curriculum_far_m": CURRICULUM_FILE.read_text().strip() if CURRICULUM_FILE.exists() else "",
     }
 
     almost_full_by_muscle = {}
@@ -159,12 +163,14 @@ def main():
     print(f"TANH      before-Tanh median {row['tanh_median']} | over 2: {row['tanh_over2_pct']}% | push that gets through {row['tanh_push']}"
           "  (jammed if over 2 keeps rising and push drops toward 0)")
     print(f"EXPLORE   {row['exploration']} (1.0 at birth; ~0.03 = stopped trying new things)")
+    print(f"TRAINING  targets up to {row['curriculum_far_m'] or '?'} m away (curriculum; 6 = the real task measured here)")
 
-    new_file = not LOG.exists()
-    with LOG.open("a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(row))
-        if new_file:
-            writer.writeheader()
+    # keep every old row; if this run has a column the file doesn't (like a new metric), rewrite it with that column
+    old_rows = list(csv.DictReader(LOG.open())) if LOG.exists() else []
+    with LOG.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(row), restval="")
+        writer.writeheader()
+        writer.writerows(old_rows)
         writer.writerow(row)
     print(f"\nsaved to {LOG.name}")
 

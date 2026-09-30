@@ -65,32 +65,34 @@ for lap in range(n_laps):
     advantages = real_grade - model_predict_grades
     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-    for epoch in range(10):#how many times it adjust the weight from the memory
-        predicted = brain.critic(xs).squeeze(-1)
-        critic_loss = ((predicted - real_grade) ** 2).mean()
-        
-        _, distribuition = brain.act(xs)
-        new_log_probs = distribuition.log_prob(ys).sum(-1)
-        #i need the prob so i can do it happen more, increasing the prob
-        #like the chance of this right y was 10% lets do this 12%
-        ratio = (new_log_probs - old_log_probs).exp()#show how much octavus change his idea
-        clipped_ratio = ratio.clamp(1 - clip, 1 + clip)#dont let the brain change more than 20 about
-        #some action
-        #mean turns all the error into a average
-        arm_loss = -torch.min(ratio * advantages, clipped_ratio * advantages).mean()
-        pre_tanh = brain.arm[:-1](xs) #every layer but the last
-        saturation = ((pre_tanh.abs() -2).clamp(min=0) ** 2).mean()#clamp everthing that pass the limit(min) turn into it
-        #loss is the amount of errors loss=error or amount of gradiant or fault
-        loss = arm_loss + 0.5 * critic_loss  + 0.01 * saturation
-        #the optimizer just try to get this small so when this is big
-        #it will adjust the weights to get it small
+    for epoch in range(10):#how many times it reviews the same memory
+        #shuffle the 2048 memories and cut them into pieces of 64: one adjust per piece, 32 per review
+        for chunk in torch.randperm(n_steps).split(minibatch_size):
+            predicted = brain.critic(xs[chunk]).squeeze(-1)
+            critic_loss = ((predicted - real_grade[chunk]) ** 2).mean()
+            
+            _, distribuition = brain.act(xs[chunk])
+            new_log_probs = distribuition.log_prob(ys[chunk]).sum(-1)
+            #i need the prob so i can do it happen more, increasing the prob
+            #like the chance of this right y was 10% lets do this 12%
+            ratio = (new_log_probs - old_log_probs[chunk]).exp()#show how much octavus change his idea
+            clipped_ratio = ratio.clamp(1 - clip, 1 + clip)#dont let the brain change more than 20 about
+            #some action
+            #mean turns all the error into a average
+            arm_loss = -torch.min(ratio * advantages[chunk], clipped_ratio * advantages[chunk]).mean()
+            pre_tanh = brain.arm[:-1](xs[chunk]) #every layer but the last
+            saturation = ((pre_tanh.abs() -2).clamp(min=0) ** 2).mean()#clamp everthing that pass the limit(min) turn into it
+            #loss is the amount of errors loss=error or amount of gradiant or fault
+            loss = arm_loss + 0.5 * critic_loss  + 0.01 * saturation
+            #the optimizer just try to get this small so when this is big
+            #it will adjust the weights to get it small
 
-        #clean the last turn grade
-        optimizer.zero_grad()
-        #calculate each weitgh fault in the bad predict
-        loss.backward() # the gradient is stored in the onw weight
-        #adjust the weights
-        optimizer.step()
+            #clean the last turn grade
+            optimizer.zero_grad()
+            #calculate each weitgh fault in the bad predict
+            loss.backward() # the gradient is stored in the onw weight
+            #adjust the weights
+            optimizer.step()
 
     print(f"lap {lap}: reward {sum(memory_reward):+.1f} | reached {reached} | exploration {brain.exploration.exp().mean():.2f}", flush=True)
     if lap % 10 == 0:

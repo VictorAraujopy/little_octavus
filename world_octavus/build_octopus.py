@@ -120,10 +120,13 @@ def octopus():
     <texture name="water" type="skybox" builtin="gradient" rgb1="0.1 0.4 0.55" rgb2="0.01 0.06 0.1" width="512" height="512"/>
     <texture name="sand" type="2d" builtin="checker" rgb1="0.78 0.71 0.52" rgb2="0.72 0.65 0.47" width="512" height="512"/>
     <material name="sand" texture="sand" texrepeat="12 12"/>
-    <material name="skin" rgba="0.85 0.33 0.25 1"/>
-    <material name="tip" rgba="0.9 0.42 0.33 1"/>
+    <!-- skin with darker specks; cube textures wrap around round shapes -->
+    <texture name="skin" type="cube" builtin="flat" rgb1="0.8 0.32 0.24" rgb2="0.8 0.32 0.24" mark="random" markrgb="0.55 0.18 0.13" random="0.06" width="256" height="256"/>
+    <material name="skin" texture="skin" rgba="1 1 1 1" specular="0.3" shininess="0.4"/>
+    <texture name="tip" type="cube" builtin="flat" rgb1="0.88 0.42 0.32" rgb2="0.88 0.42 0.32" mark="random" markrgb="0.62 0.25 0.18" random="0.05" width="256" height="256"/>
+    <material name="tip" texture="tip" rgba="1 1 1 1" specular="0.3" shininess="0.4"/>
     <material name="sucker" rgba="1 0.8 0.72 1"/>
-    <material name="eye" rgba="0.95 0.93 0.8 1"/>
+    <material name="eye" rgba="0.86 0.68 0.3 1" specular="0.8" shininess="0.9"/>
     <material name="pupil" rgba="0.05 0.05 0.05 1"/>
   </asset>
 
@@ -149,14 +152,16 @@ def octopus():
       <freejoint name="root"/>
       <camera name="follow" mode="trackcom" pos="0 -1.8 1.1" xyaxes="1 0 0 0 0.53 0.848"/>
       <geom name="head" type="sphere" size="0.12"/>
-      <!-- octopus mantle: arms are 3-5x its length, so ~20 cm for 60 cm arms (the old 40 cm one looked like a squid) -->
-      <geom name="mantle" class="visual" type="ellipsoid" size="0.11 0.1 0.1" pos="-0.07 0 0.09" euler="0 -35 0"/>
-      <geom name="web" class="visual" type="ellipsoid" size="0.2 0.2 0.035" pos="0 0 -0.07"/>
-      <!-- eyes on the sides of the head, looking sideways, with the octopus's horizontal slit pupil -->
-      <geom class="visual" material="eye" type="sphere" size="0.036" pos="0 0.105 0.06"/>
-      <geom class="visual" material="eye" type="sphere" size="0.036" pos="0 -0.105 0.06"/>
-      <geom class="visual" material="pupil" type="ellipsoid" size="0.016 0.003 0.005" pos="0 0.1328 0.0759" euler="29.7 0 0"/>
-      <geom class="visual" material="pupil" type="ellipsoid" size="0.016 0.003 0.005" pos="0 -0.1328 0.0759" euler="-29.7 0 0"/>
+      <!-- octopus mantle, overlapping the head sphere so both read as one smooth egg (not two stacked balls).
+           Arms are 3-5x its length: ~20 cm for 60 cm arms (the old 40 cm one looked like a squid) -->
+      <geom name="mantle" class="visual" type="ellipsoid" size="0.13 0.123 0.165" pos="-0.035 0 0.055" euler="0 -28 0"/>
+      <!-- the web only fills between the arm roots (bigger, it showed as a plate under the arms) -->
+      <geom name="web" class="visual" type="ellipsoid" size="0.145 0.145 0.05" pos="0 0 -0.06"/>
+      <!-- amber eyes half sunk into the sides of the head, with the octopus's horizontal slit pupil -->
+      <geom class="visual" material="eye" type="sphere" size="0.034" pos="0.01 0.1 0.05"/>
+      <geom class="visual" material="eye" type="sphere" size="0.034" pos="0.01 -0.1 0.05"/>
+      <geom class="visual" material="pupil" type="ellipsoid" size="0.019 0.003 0.006" pos="0.013 0.1294 0.0647" euler="26.6 0 0"/>
+      <geom class="visual" material="pupil" type="ellipsoid" size="0.019 0.003 0.006" pos="0.013 -0.1294 0.0647" euler="-26.6 0 0"/>
 
       <replicate count="{ARMS}" euler="0 0 {360 / ARMS:g}">
         <body name="arm" pos="0.0924 0.0383 -0.05" euler="0 0 22.5">

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import torch
 
-from brain_octavus.brain import Octavus_brain
+from brain_octavus.brain import Octavus_arms_brain
 from world_octavus.environment import OctopusEnv
 
 CHECKPOINT = Path(__file__).resolve().parents[1] / "octavus.pt"
@@ -35,7 +35,7 @@ if not CHECKPOINT.exists():
     raise SystemExit(f"no {CHECKPOINT.name} yet: run the training first (uv run brain_octavus/train.py)")
 
 env = OctopusEnv(render_mode="human")
-brain = Octavus_brain()
+brain = Octavus_arms_brain()
 load_latest(brain)
 x, _ = env.reset()
 steps = 0

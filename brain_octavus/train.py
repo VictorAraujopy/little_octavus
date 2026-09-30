@@ -2,14 +2,14 @@ from pathlib import Path
 
 import gymnasium as gym
 import torch
-from brain_octavus.brain import Octavus_brain
+from brain_octavus.brain import Octavus_arms_brain
 from brain_octavus.reward import reward as rw
 from world_octavus.environment import OctopusEnv
 
 
 env = OctopusEnv(reward_fn=rw)
 
-brain = Octavus_brain()
+brain = Octavus_arms_brain()
 #continue from the last saved brain instead of starting from zero
 if Path("octavus.pt").exists():
     brain.load_state_dict(torch.load("octavus.pt"))
@@ -80,7 +80,7 @@ for lap in range(n_laps):
             #some action
             #mean turns all the error into a average
             arm_loss = -torch.min(ratio * advantages[chunk], clipped_ratio * advantages[chunk]).mean()
-            pre_tanh = brain.arm[:-1](xs[chunk]) #every layer but the last
+            pre_tanh = brain.pre_tanh(xs[chunk]) #every number before its last Tanh
             saturation = ((pre_tanh.abs() -2).clamp(min=0) ** 2).mean()#clamp: what goes below the min turns into the min, gives back a copy (clamp_ changes it in place)
             #loss is the amount of errors loss=error or amount of gradiant or fault
             loss = arm_loss + 0.5 * critic_loss  + 0.1 * saturation

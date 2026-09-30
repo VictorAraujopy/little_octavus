@@ -51,51 +51,93 @@ class Octavus_brain(nn.Module):
         draw_y = distribuition.sample()
         return draw_y, distribuition
 
+    def pre_tanh(self, x: torch.Tensor):
+        #the numbers before the last Tanh: train.py charges the ones past 2
+        return self.arm[:-1](x)
 
-class SimpleBrain(nn.Module):
-    
-    def __init__(self, n_x, n_y): #number of x and number of y (not the real values)
-        #runs the nn.Module __init__
-        #super refers the mother class(nn.Module)
+
+class Octavus_arms_brain(nn.Module):
+    #like a real octopus (2/3 of its neurons are in the arms): one small network shared by the 8 arms,
+    #and a central brain that sees the whole body, sends each arm a short order and drives the siphon
+    def __init__(self):
         super().__init__()
-        #neural network that decides the action
-        self.body = nn.Sequential(#create the object
-            nn.Linear(n_x, 64),#Neural layer, defines the layer size and create it
-            #make a curve so the multiply dont stay only on a straight line
+
+        n_arms, n_arm_x, n_body_x, n_arm_y, n_jet_y = 8, 36, 17, 20, 3
+        #numbers the central brain sends to each arm: a short order, like "reach that way" or "grip"
+        n_order = 8
+
+        self.n_arms = n_arms
+        self.n_arm_x = n_arm_x
+        self.n_order = n_order
+
+        #where each arm sits around the body (cos, sin): the shared arm network needs it to know which arm it is
+        angles = torch.deg2rad(22.5 + 45 * torch.arange(n_arms))
+        self.register_buffer("arm_position", torch.stack([angles.cos(), angles.sin()], dim=-1))
+
+        n_x = n_arms * n_arm_x + n_body_x  #305: everything the octopus feels
+
+        #central brain: sees everything
+        self.central = nn.Sequential(
+            nn.Linear(n_x, 256),
             nn.Tanh(),
-            nn.Linear(64, 64),
+            nn.Linear(256, 256),
             nn.Tanh(),
-            nn.Linear(64, n_y),
         )
-        self.exploration = nn.Parameter(torch.zeros(n_y))#create a number for each y
-        
+        #from the central thought: one order per arm, and the siphon commands (their Tanh is in think)
+        self.orders = nn.Linear(256, n_arms * n_order)
+        self.siphon = nn.Linear(256, n_jet_y)
+
+        #arm network, the same one for all 8 arms: what this arm feels + its order + where it is -> its 20 commands
+        #8 arms use it every step, so every step gives it 8 examples to learn from
+        self.arm = nn.Sequential(
+            nn.Linear(n_arm_x + n_order + 2, 128),
+            nn.Tanh(),
+            nn.Linear(128, 128),
+            nn.Tanh(),
+            nn.Linear(128, n_arm_y),
+        )
+
         self.critic = nn.Sequential(
-            nn.Linear(n_x, 64),
+            nn.Linear(n_x, 256),
             nn.Tanh(),
-            nn.Linear(64, 64),
+            nn.Linear(256, 256),
             nn.Tanh(),
-            nn.Linear(64, 1),    
+            nn.Linear(256, 1),
         )
-    
-    def act(self, x):
-        gross_y = self.body(x)
-        variation = self.exploration.exp()#read the exploration number 
-        #exp catch the number and made 2 raised by it
-        
+        #20 kinds of arm motor (shared by the 8 arms) + 3 for the siphon, same as Octavus_brain
+        self.exploration = nn.Parameter(torch.zeros(n_arm_y + n_jet_y))
+
+    def think(self, x: torch.Tensor):
+        #one pass through the whole brain: the numbers before the last Tanh of the arms, the siphon and the orders
+        thought = self.central(x)
+        orders_z = self.orders(thought)
+        orders = torch.tanh(orders_z).reshape(*x.shape[:-1], self.n_arms, self.n_order)
+        arms_x = x[..., :self.n_arms * self.n_arm_x].reshape(*x.shape[:-1], self.n_arms, self.n_arm_x)
+        position = self.arm_position.expand(*x.shape[:-1], self.n_arms, 2)
+        arms_z = self.arm(torch.cat([arms_x, orders, position], dim=-1)).flatten(-2)  #8 arms x 20, in a row
+        siphon_z = self.siphon(thought)
+        return arms_z, siphon_z, orders_z
+
+    def pre_tanh(self, x: torch.Tensor):
+        #every number before its last Tanh (arms, siphon and orders): train.py charges the ones past 2
+        return torch.cat(self.think(x), dim=-1)
+
+    def act(self, x: torch.Tensor):
+        arms_z, siphon_z, _ = self.think(x)
+        gross_y = torch.tanh(torch.cat([arms_z, siphon_z], dim=-1))  #163: arms first, siphon last (the env's order)
+
+        arms = self.exploration[:20].repeat(self.n_arms)  #each arm kind shares one draw size
+        jets = self.exploration[20:]
+        variation = torch.cat([arms, jets]).exp()
         distribuition = torch.distributions.Normal(gross_y, variation)
-        #keep de randomizer
-        draw_y = distribuition.sample()#do the math and draw 
-        
-        return draw_y
-    
+        draw_y = distribuition.sample()
+        return draw_y, distribuition
+
+
+
 if __name__ == "__main__":
-    brain = SimpleBrain(n_x=3, n_y=1)
-    x = torch.tensor([1.0, 0.0, 0.5])#the neural network just accept 
-    #tensor values
-    #same x three times: the draw should give a different y each time
-    print("y:", brain.act(x))
-    print("y:", brain.act(x))
-    print("y:", brain.act(x))
-    #critic's guess of how much reward comes from this situation
-    print("critic:", brain.critic(x))
-    print("weights:", sum(p.numel() for p in brain.parameters()))
+    #quick check: both brains take the 305 numbers and answer 163 commands
+    x = torch.zeros(305)
+    for brain in (Octavus_brain(), Octavus_arms_brain()):
+        y, _ = brain.act(x)
+        print(type(brain).__name__, "| commands:", y.shape[0], "| weights:", sum(p.numel() for p in brain.parameters()))

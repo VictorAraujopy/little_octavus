@@ -17,7 +17,7 @@ import mujoco
 import numpy as np
 import torch
 
-from brain_octavus.brain import Octavus_brain
+from brain_octavus.brain import Octavus_arms_brain
 from brain_octavus.reward import reward
 from world_octavus.build_octopus import SECTIONS
 from world_octavus.environment import OctopusEnv
@@ -36,7 +36,7 @@ def main():
         raise SystemExit(f"no {CHECKPOINT.name} yet: run the training first (uv run brain_octavus/train.py)")
 
     env = OctopusEnv(reward_fn=reward)
-    brain = Octavus_brain()
+    brain = Octavus_arms_brain()
     brain.load_state_dict(torch.load(CHECKPOINT))
     suckers = [i for i in range(env.model.nu) if env.model.actuator_trntype[i] == mujoco.mjtTrn.mjTRN_BODY]
     sucker_touch_sensors = [env.model.sensor_adr[env.model.sensor(env.model.actuator(i).name.replace("_sucker", "_touch")).id]
@@ -57,7 +57,7 @@ def main():
         while True:
             x = torch.tensor(observation)
             with torch.no_grad():
-                pre_tanh = brain.arm[:-1](x)  # the arm's numbers before its last layer, the Tanh
+                pre_tanh = brain.pre_tanh(x)  # every number the brain has before its last Tanh
                 _, distribution = brain.act(x)
             brain_output = distribution.mean.numpy()  # 163 numbers: the center of the brain's draw
             observation, step_reward, terminated, truncated, info = env.step(brain_output)

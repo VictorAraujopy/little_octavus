@@ -83,7 +83,7 @@ for lap in range(n_laps):
             pre_tanh = brain.arm[:-1](xs[chunk]) #every layer but the last
             saturation = ((pre_tanh.abs() -2).clamp(min=0) ** 2).mean()#clamp: what goes below the min turns into the min, gives back a copy (clamp_ changes it in place)
             #loss is the amount of errors loss=error or amount of gradiant or fault
-            loss = arm_loss + 0.5 * critic_loss  + 0.01 * saturation
+            loss = arm_loss + 0.5 * critic_loss  + 0.1 * saturation
             #the optimizer just try to get this small so when this is big
             #it will adjust the weights to get it small
 

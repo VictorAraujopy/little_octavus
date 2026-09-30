@@ -59,7 +59,7 @@ def main():
             with torch.no_grad():
                 pre_tanh = brain.arm[:-1](x)  # the arm's numbers before its last layer, the Tanh
                 _, distribution = brain.act(x)
-            brain_output = distribution.mean.numpy()  # 162 numbers: the center of the brain's draw
+            brain_output = distribution.mean.numpy()  # 163 numbers: the center of the brain's draw
             observation, step_reward, terminated, truncated, info = env.step(brain_output)
 
             pre_tanh_sizes.append(pre_tanh.abs().numpy())  # size only: -5 and +5 are equally jammed
@@ -87,7 +87,7 @@ def main():
         squirts_started = jet_on_this_episode[1:] & ~jet_on_this_episode[:-1]  # off -> on
         jet_pulses.append(squirts_started.sum() + jet_on_this_episode[0])
 
-    # the brain's 162 numbers have no names; the ENVIRONMENT's action layout (environment.py docstring) gives them:
+    # the brain's 163 numbers have no names; the ENVIRONMENT's action layout (environment.py docstring) gives them:
     # the first 160 are [arm, section, motor], and a section's 5 motors are bend_up, bend_side, twist, stretch, sucker
     env_layout = np.clip(np.array(brain_outputs)[:, :160], -1, 1).reshape(-1, env.n_arms, SECTIONS, 5)
     muscle_commands = env_layout[:, :, :, :4]

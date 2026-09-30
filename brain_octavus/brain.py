@@ -52,11 +52,7 @@ class Octavus_brain(nn.Module):
         return draw_y, distribuition
 
     def pre_tanh(self, x: torch.Tensor):
-        """
-        The 163 numbers right before the output Tanh, for the saturation cost in train.py (it charges the ones past 2).
-        Here the Tanh is the last layer of self.arm, so it's every layer but the last: self.arm[:-1].
-        (Octavus_arms_brain.pre_tanh gives the same kind of numbers, but 227 of them, from three outputs.)
-        """
+        """The 163 numbers before the output Tanh, for the saturation cost: every layer but the last."""
         return self.arm[:-1](x)
 
 
@@ -112,14 +108,7 @@ class Octavus_arms_brain(nn.Module):
         self.exploration = nn.Parameter(torch.zeros(n_arm_y + n_jet_y))
 
     def think(self, x: torch.Tensor):
-        """
-        One pass through the whole brain. Returns three outputs, each stopped right BEFORE its Tanh (raw numbers):
-            arms_z   (160): the 8 arms' 20 commands, in a row
-            siphon_z (3):   the siphon commands
-            orders_z (64):  the central brain's 8-number order for each arm
-        The orders do go through a Tanh inside (that's the version the arms receive), but come back raw.
-        act() applies the Tanh to arms_z and siphon_z; pre_tanh() joins all three for the saturation cost.
-        """
+        """One pass through the brain: arms (160), siphon (3) and orders (64), each stopped before its Tanh."""
         thought = self.central(x)
         orders_z = self.orders(thought)
         orders = torch.tanh(orders_z).reshape(*x.shape[:-1], self.n_arms, self.n_order)
@@ -130,13 +119,7 @@ class Octavus_arms_brain(nn.Module):
         return arms_z, siphon_z, orders_z
 
     def pre_tanh(self, x: torch.Tensor):
-        """
-        The numbers right before each output Tanh, for the saturation cost in train.py (it charges the ones past 2).
-        DIFFERENT from Octavus_brain.pre_tanh: there the Tanh is one layer at the end, so it slices it off
-        (self.arm[:-1]). Here there are three outputs with their own Tanh applied by hand in think(), so it
-        just joins think()'s raw numbers: 160 arms + 3 siphon + 64 orders = 227 (not 163).
-        The orders are included because they can jam at the edge too.
-        """
+        """Unlike Octavus_brain.pre_tanh (slices off the Tanh layer), joins think()'s 3 raw outputs: 227 numbers."""
         return torch.cat(self.think(x), dim=-1)
 
     def act(self, x: torch.Tensor):

@@ -23,8 +23,12 @@ def reward(info):
     #0.013: jetting at 1 m/s (~190 W/kg) costs ~25% of its progress, crawling like a real octopus ~1%,
     #a flailing newborn (~420 W/kg) ~5.5 per step; saving 100 W/kg is worth 1.3
     #(the old cap at 1.0 made everything above ~1700 W free, and it learned to burn 3000 W)
+    #the cost grows with the curriculum: 20% with the first targets, 100% at the real 3-6 m
+    #paying it all from birth, it never learned to move: random moves get nowhere, so the only thing left
+    #to improve was energy, and it curled into a ball with the jet off. First learn to get there, then to save
+    energy_share = 0.2 + 0.8 * info["curriculum_level"]
     watts_per_kg = info["power"] / info["mass"]
-    energy = 0.013 * watts_per_kg
+    energy = energy_share * 0.013 * watts_per_kg
     #no rule about keeping the tips on the floor: in water swimming is a healthy octopus move
     #(it swam all the time, so that cost was a fixed tax that never changed and taught nothing)
     score = progress - 0.05 * jerk - 0.05 * turn - energy

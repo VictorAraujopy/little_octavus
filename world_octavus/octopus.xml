@@ -7,7 +7,7 @@
 <mujoco model="octavus">
   <compiler angle="degree" autolimits="true"/>
 
-  <!-- sea water: Earth's gravity, and each body's gravcomp is the buoyancy (MuJoCo's fluid only adds drag).
+  <!-- sea water: Earth's gravity, and each body's gravcomp is the buoyancy (MuJoCo's fluid adds drag, lift and the water dragged along, not buoyancy).
        Euler + sparse: the soft arms have ~500 joints, and this integrator is ~7x faster for a body shaped like a tree -->
   <option timestep="0.005" integrator="Euler" jacobian="sparse" gravity="0 0 -9.81" density="1025" viscosity="0.001"/>
 
@@ -34,8 +34,10 @@
   <default>
     <!-- slippery skin (mucus on wet sand): the suckers do the gripping. The floor inherits it: MuJoCo uses the larger of the two.
          fluidshape ellipsoid: water forces for long thin shapes (drag sideways vs lengthwise, lift, the water it drags along) -->
-    <geom material="skin" contype="2" conaffinity="1" friction="0.3 0.02 0.01" fluidshape="ellipsoid"/>
-    <joint armature="0.01"/>
+    <geom material="skin" contype="2" conaffinity="1" friction="0.3 0.02 0.01" fluidshape="ellipsoid" density="1060"/>
+    <!-- armature: a little made-up inertia per joint, without it the thin joints blow up. 0.002 never blew up in 52
+         episodes of random flailing (0.001 did in 2 of 17); 0.01 made the 4 mm tip move like lead (4 deg in 0.1 s, now 19) -->
+    <joint armature="0.002"/>
     <default class="visual">
       <geom contype="0" conaffinity="0" density="0" fluidshape="none"/>
     </default>
@@ -50,152 +52,153 @@
       <geom class="visual" type="sphere" size="0.12" rgba="1 0.25 0.2 0.7"/>
     </body>
 
-    <body name="torso" pos="0 0 0.19" gravcomp="0.99">
+    <body name="torso" pos="0 0 0.12" gravcomp="0.99">
       <freejoint name="root"/>
       <camera name="follow" mode="trackcom" pos="0 -1.8 1.1" xyaxes="1 0 0 0 0.53 0.848"/>
-      <geom name="head" type="sphere" size="0.12"/>
-      <!-- octopus mantle, overlapping the head sphere so both read as one smooth egg (not two stacked balls).
-           Arms are 3-5x its length: ~20 cm for 60 cm arms (the old 40 cm one looked like a squid) -->
-      <geom name="mantle" class="visual" type="ellipsoid" size="0.13 0.123 0.165" pos="-0.035 0 0.055" euler="0 -28 0"/>
+      <!-- the mantle is the head's physical part: its weight (with the water inside) and the water it pushes.
+           13 cm long: the arms are ~4.5x the mantle (Mazzolai 2013) -->
+      <geom name="mantle" type="ellipsoid" size="0.052 0.0492 0.066" pos="-0.014 0 0.022" euler="0 -28 0"/>
+      <!-- the head under the mantle, where the eyes are: only drawn, so its weight isn't counted twice -->
+      <geom name="head" class="visual" type="sphere" size="0.048"/>
       <!-- the web only fills between the arm roots: past them it showed as a plate under the arms, or a stub between them -->
-      <geom name="web" class="visual" type="ellipsoid" size="0.12 0.12 0.035" pos="0 0 -0.06"/>
+      <geom name="web" class="visual" type="ellipsoid" size="0.048 0.048 0.014" pos="0 0 -0.024"/>
       <!-- amber eyes half sunk into the sides of the head, with the octopus's horizontal slit pupil -->
-      <geom class="visual" material="eye" type="sphere" size="0.034" pos="0.01 0.1 0.05"/>
-      <geom class="visual" material="eye" type="sphere" size="0.034" pos="0.01 -0.1 0.05"/>
-      <geom class="visual" material="pupil" type="ellipsoid" size="0.019 0.003 0.006" pos="0.013 0.1294 0.0647" euler="26.6 0 0"/>
-      <geom class="visual" material="pupil" type="ellipsoid" size="0.019 0.003 0.006" pos="0.013 -0.1294 0.0647" euler="-26.6 0 0"/>
+      <geom class="visual" material="eye" type="sphere" size="0.0136" pos="0.004 0.04 0.02"/>
+      <geom class="visual" material="eye" type="sphere" size="0.0136" pos="0.004 -0.04 0.02"/>
+      <geom class="visual" material="pupil" type="ellipsoid" size="0.0076 0.0012 0.0024" pos="0.0052 0.05176 0.02588" euler="26.6 0 0"/>
+      <geom class="visual" material="pupil" type="ellipsoid" size="0.0076 0.0012 0.0024" pos="0.0052 -0.05176 0.02588" euler="-26.6 0 0"/>
 
       <replicate count="8" euler="0 0 45">
-        <body name="arm" pos="0.0924 0.0383 -0.05" euler="0 0 22.5">
+        <body name="arm" pos="0.03696 0.01532 -0.02" euler="0 0 22.5">
 
-<body name="seg0_" pos="0 0 0" euler="0 25 0" gravcomp="0.952">
+<body name="seg0_" pos="0 0 0" euler="0 25 0" gravcomp="0.9669811320754716">
   <joint name="seg0_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="1524" damping="76.19"/>
-  <joint name="seg0_bend_up" axis="0 1 0" range="-45 45" stiffness="2.292" damping="0.1146"/>
-  <joint name="seg0_bend_side" axis="0 0 1" range="-45 45" stiffness="2.292" damping="0.1146"/>
-  <joint name="seg0_twist" axis="1 0 0" range="-15 15" stiffness="1.719" damping="0.08594"/>
-  <geom material="skin" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0450"/>
-  <geom class="visual" material="sucker" type="sphere" size="0.0180" pos="0.0187 0 -0.0382"/>
-  <site name="seg0_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0540" rgba="0 0 0 0"/>
-<body name="seg1_" pos="0.0375 0 0" gravcomp="0.952">
-  <joint name="seg1_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="1440" damping="72.01"/>
-  <joint name="seg1_bend_up" axis="0 1 0" range="-45 45" stiffness="2.166" damping="0.1083"/>
-  <joint name="seg1_bend_side" axis="0 0 1" range="-45 45" stiffness="2.166" damping="0.1083"/>
-  <joint name="seg1_twist" axis="1 0 0" range="-15 15" stiffness="1.625" damping="0.08123"/>
-  <geom material="skin" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0425"/>
-  <geom class="visual" material="sucker" type="sphere" size="0.0170" pos="0.0187 0 -0.0362"/>
-  <site name="seg1_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0510" rgba="0 0 0 0"/>
-<body name="seg2_" pos="0.0375 0 0" gravcomp="0.952">
-  <joint name="seg2_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="1357" damping="67.84"/>
-  <joint name="seg2_bend_up" axis="0 1 0" range="-45 45" stiffness="2.041" damping="0.102"/>
-  <joint name="seg2_bend_side" axis="0 0 1" range="-45 45" stiffness="2.041" damping="0.102"/>
-  <joint name="seg2_twist" axis="1 0 0" range="-15 15" stiffness="1.53" damping="0.07652"/>
-  <geom material="skin" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0401"/>
-  <geom class="visual" material="sucker" type="sphere" size="0.0160" pos="0.0187 0 -0.0341"/>
-  <site name="seg2_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0481" rgba="0 0 0 0"/>
-<body name="seg3_" pos="0.0375 0 0" gravcomp="0.952">
-  <joint name="seg3_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="1273" damping="63.66"/>
-  <joint name="seg3_bend_up" axis="0 1 0" range="-45 45" stiffness="1.915" damping="0.09575"/>
-  <joint name="seg3_bend_side" axis="0 0 1" range="-45 45" stiffness="1.915" damping="0.09575"/>
-  <joint name="seg3_twist" axis="1 0 0" range="-15 15" stiffness="1.436" damping="0.07181"/>
-  <geom material="skin" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0376"/>
-  <geom class="visual" material="sucker" type="sphere" size="0.0150" pos="0.0187 0 -0.0320"/>
-  <site name="seg3_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0451" rgba="0 0 0 0"/>
-<body name="seg4_" pos="0.0375 0 0" gravcomp="0.952">
-  <joint name="seg4_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="1190" damping="59.49"/>
-  <joint name="seg4_bend_up" axis="0 1 0" range="-45 45" stiffness="1.789" damping="0.08947"/>
-  <joint name="seg4_bend_side" axis="0 0 1" range="-45 45" stiffness="1.789" damping="0.08947"/>
-  <joint name="seg4_twist" axis="1 0 0" range="-15 15" stiffness="1.342" damping="0.0671"/>
-  <geom material="skin" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0351"/>
-  <geom class="visual" material="sucker" type="sphere" size="0.0141" pos="0.0187 0 -0.0299"/>
-  <site name="seg4_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0422" rgba="0 0 0 0"/>
-<body name="seg5_" pos="0.0375 0 0" gravcomp="0.952">
-  <joint name="seg5_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="1106" damping="55.31"/>
-  <joint name="seg5_bend_up" axis="0 1 0" range="-45 45" stiffness="1.664" damping="0.08318"/>
-  <joint name="seg5_bend_side" axis="0 0 1" range="-45 45" stiffness="1.664" damping="0.08318"/>
-  <joint name="seg5_twist" axis="1 0 0" range="-15 15" stiffness="1.248" damping="0.06239"/>
-  <geom material="skin" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0327"/>
-  <geom class="visual" material="sucker" type="sphere" size="0.0131" pos="0.0187 0 -0.0278"/>
-  <site name="seg5_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0392" rgba="0 0 0 0"/>
-<body name="seg6_" pos="0.0375 0 0" gravcomp="0.952">
-  <joint name="seg6_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="1023" damping="51.13"/>
-  <joint name="seg6_bend_up" axis="0 1 0" range="-45 45" stiffness="1.538" damping="0.0769"/>
-  <joint name="seg6_bend_side" axis="0 0 1" range="-45 45" stiffness="1.538" damping="0.0769"/>
-  <joint name="seg6_twist" axis="1 0 0" range="-15 15" stiffness="1.154" damping="0.05768"/>
-  <geom material="skin" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0302"/>
-  <geom class="visual" material="sucker" type="sphere" size="0.0121" pos="0.0187 0 -0.0257"/>
-  <site name="seg6_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0362" rgba="0 0 0 0"/>
-<body name="seg7_" pos="0.0375 0 0" gravcomp="0.952">
-  <joint name="seg7_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="939.1" damping="46.96"/>
-  <joint name="seg7_bend_up" axis="0 1 0" range="-45 45" stiffness="1.412" damping="0.07062"/>
-  <joint name="seg7_bend_side" axis="0 0 1" range="-45 45" stiffness="1.412" damping="0.07062"/>
-  <joint name="seg7_twist" axis="1 0 0" range="-15 15" stiffness="1.059" damping="0.05297"/>
-  <geom material="skin" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0277"/>
-  <geom class="visual" material="sucker" type="sphere" size="0.0111" pos="0.0187 0 -0.0236"/>
-  <site name="seg7_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0333" rgba="0 0 0 0"/>
-<body name="seg8_" pos="0.0375 0 0" gravcomp="0.952">
-  <joint name="seg8_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="855.6" damping="42.78"/>
-  <joint name="seg8_bend_up" axis="0 1 0" range="-45 45" stiffness="1.287" damping="0.06434"/>
-  <joint name="seg8_bend_side" axis="0 0 1" range="-45 45" stiffness="1.287" damping="0.06434"/>
-  <joint name="seg8_twist" axis="1 0 0" range="-15 15" stiffness="0.9651" damping="0.04826"/>
-  <geom material="tip" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0253"/>
-  <geom class="visual" material="sucker" type="sphere" size="0.0101" pos="0.0187 0 -0.0215"/>
-  <site name="seg8_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0303" rgba="0 0 0 0"/>
-<body name="seg9_" pos="0.0375 0 0" gravcomp="0.952">
-  <joint name="seg9_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="772.1" damping="38.6"/>
-  <joint name="seg9_bend_up" axis="0 1 0" range="-45 45" stiffness="1.161" damping="0.05806"/>
-  <joint name="seg9_bend_side" axis="0 0 1" range="-45 45" stiffness="1.161" damping="0.05806"/>
-  <joint name="seg9_twist" axis="1 0 0" range="-15 15" stiffness="0.8709" damping="0.04354"/>
-  <geom material="tip" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0228"/>
-  <geom class="visual" material="sucker" type="sphere" size="0.0091" pos="0.0187 0 -0.0194"/>
-  <site name="seg9_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0274" rgba="0 0 0 0"/>
-<body name="seg10_" pos="0.0375 0 0" gravcomp="0.952">
-  <joint name="seg10_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="688.5" damping="34.43"/>
-  <joint name="seg10_bend_up" axis="0 1 0" range="-45 45" stiffness="1.036" damping="0.05178"/>
-  <joint name="seg10_bend_side" axis="0 0 1" range="-45 45" stiffness="1.036" damping="0.05178"/>
-  <joint name="seg10_twist" axis="1 0 0" range="-15 15" stiffness="0.7767" damping="0.03883"/>
-  <geom material="tip" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0203"/>
-  <geom class="visual" material="sucker" type="sphere" size="0.0081" pos="0.0187 0 -0.0173"/>
-  <site name="seg10_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0244" rgba="0 0 0 0"/>
-<body name="seg11_" pos="0.0375 0 0" gravcomp="0.952">
-  <joint name="seg11_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="605" damping="30.25"/>
-  <joint name="seg11_bend_up" axis="0 1 0" range="-45 45" stiffness="0.9099" damping="0.0455"/>
-  <joint name="seg11_bend_side" axis="0 0 1" range="-45 45" stiffness="0.9099" damping="0.0455"/>
-  <joint name="seg11_twist" axis="1 0 0" range="-15 15" stiffness="0.6825" damping="0.03412"/>
-  <geom material="tip" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0179"/>
-  <geom class="visual" material="sucker" type="sphere" size="0.0071" pos="0.0187 0 -0.0152"/>
-  <site name="seg11_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0214" rgba="0 0 0 0"/>
-<body name="seg12_" pos="0.0375 0 0" gravcomp="0.952">
-  <joint name="seg12_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="521.5" damping="26.07"/>
-  <joint name="seg12_bend_up" axis="0 1 0" range="-45 45" stiffness="0.7843" damping="0.03922"/>
-  <joint name="seg12_bend_side" axis="0 0 1" range="-45 45" stiffness="0.7843" damping="0.03922"/>
-  <joint name="seg12_twist" axis="1 0 0" range="-15 15" stiffness="0.5882" damping="0.02941"/>
-  <geom material="tip" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0154"/>
+  <joint name="seg0_bend_up" axis="0 1 0" range="-45 45" stiffness="0.9549" damping="0.04775"/>
+  <joint name="seg0_bend_side" axis="0 0 1" range="-45 45" stiffness="0.9549" damping="0.04775"/>
+  <joint name="seg0_twist" axis="1 0 0" range="-15 15" stiffness="0.7162" damping="0.03581"/>
+  <geom material="skin" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.01875" mass="0.043903"/>
+  <geom class="visual" material="sucker" type="sphere" size="0.0075" pos="0.0187 0 -0.0159"/>
+  <site name="seg0_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0225" rgba="0 0 0 0"/>
+<body name="seg1_" pos="0.0375 0 0" gravcomp="0.9669811320754716">
+  <joint name="seg1_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="1433" damping="71.65"/>
+  <joint name="seg1_bend_up" axis="0 1 0" range="-45 45" stiffness="0.8981" damping="0.0449"/>
+  <joint name="seg1_bend_side" axis="0 0 1" range="-45 45" stiffness="0.8981" damping="0.0449"/>
+  <joint name="seg1_twist" axis="1 0 0" range="-15 15" stiffness="0.6735" damping="0.03368"/>
+  <geom material="skin" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.01763" mass="0.038829"/>
+  <geom class="visual" material="sucker" type="sphere" size="0.0071" pos="0.0187 0 -0.0150"/>
+  <site name="seg1_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0212" rgba="0 0 0 0"/>
+<body name="seg2_" pos="0.0375 0 0" gravcomp="0.9669811320754716">
+  <joint name="seg2_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="1342" damping="67.12"/>
+  <joint name="seg2_bend_up" axis="0 1 0" range="-45 45" stiffness="0.8412" damping="0.04206"/>
+  <joint name="seg2_bend_side" axis="0 0 1" range="-45 45" stiffness="0.8412" damping="0.04206"/>
+  <joint name="seg2_twist" axis="1 0 0" range="-15 15" stiffness="0.6309" damping="0.03154"/>
+  <geom material="skin" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.01652" mass="0.034067"/>
+  <geom class="visual" material="sucker" type="sphere" size="0.0066" pos="0.0187 0 -0.0140"/>
+  <site name="seg2_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0198" rgba="0 0 0 0"/>
+<body name="seg3_" pos="0.0375 0 0" gravcomp="0.9669811320754716">
+  <joint name="seg3_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="1252" damping="62.58"/>
+  <joint name="seg3_bend_up" axis="0 1 0" range="-45 45" stiffness="0.7843" damping="0.03922"/>
+  <joint name="seg3_bend_side" axis="0 0 1" range="-45 45" stiffness="0.7843" damping="0.03922"/>
+  <joint name="seg3_twist" axis="1 0 0" range="-15 15" stiffness="0.5882" damping="0.02941"/>
+  <geom material="skin" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.01540" mass="0.029616"/>
   <geom class="visual" material="sucker" type="sphere" size="0.0062" pos="0.0187 0 -0.0131"/>
-  <site name="seg12_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0185" rgba="0 0 0 0"/>
-<body name="seg13_" pos="0.0375 0 0" gravcomp="0.952">
-  <joint name="seg13_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="438" damping="21.9"/>
-  <joint name="seg13_bend_up" axis="0 1 0" range="-45 45" stiffness="0.6587" damping="0.03293"/>
-  <joint name="seg13_bend_side" axis="0 0 1" range="-45 45" stiffness="0.6587" damping="0.03293"/>
-  <joint name="seg13_twist" axis="1 0 0" range="-15 15" stiffness="0.494" damping="0.0247"/>
-  <geom material="tip" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0129"/>
-  <geom class="visual" material="sucker" type="sphere" size="0.0052" pos="0.0187 0 -0.0110"/>
-  <site name="seg13_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0155" rgba="0 0 0 0"/>
-<body name="seg14_" pos="0.0375 0 0" gravcomp="0.952">
-  <joint name="seg14_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="354.4" damping="17.72"/>
-  <joint name="seg14_bend_up" axis="0 1 0" range="-45 45" stiffness="0.5331" damping="0.02665"/>
-  <joint name="seg14_bend_side" axis="0 0 1" range="-45 45" stiffness="0.5331" damping="0.02665"/>
-  <joint name="seg14_twist" axis="1 0 0" range="-15 15" stiffness="0.3998" damping="0.01999"/>
-  <geom material="tip" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0105"/>
-  <geom class="visual" material="sucker" type="sphere" size="0.0042" pos="0.0187 0 -0.0089"/>
-  <site name="seg14_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0126" rgba="0 0 0 0"/>
-<body name="seg15_" pos="0.0375 0 0" gravcomp="0.952">
-  <joint name="seg15_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="270.9" damping="13.54"/>
-  <joint name="seg15_bend_up" axis="0 1 0" range="-45 45" stiffness="0.4074" damping="0.02037"/>
-  <joint name="seg15_bend_side" axis="0 0 1" range="-45 45" stiffness="0.4074" damping="0.02037"/>
-  <joint name="seg15_twist" axis="1 0 0" range="-15 15" stiffness="0.3056" damping="0.01528"/>
-  <geom material="tip" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0080"/>
-  <geom class="visual" material="sucker" type="sphere" size="0.0032" pos="0.0187 0 -0.0068"/>
-  <site name="seg15_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0096" rgba="0 0 0 0"/></body>
+  <site name="seg3_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0185" rgba="0 0 0 0"/>
+<body name="seg4_" pos="0.0375 0 0" gravcomp="0.9669811320754716">
+  <joint name="seg4_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="1161" damping="58.04"/>
+  <joint name="seg4_bend_up" axis="0 1 0" range="-45 45" stiffness="0.7274" damping="0.03637"/>
+  <joint name="seg4_bend_side" axis="0 0 1" range="-45 45" stiffness="0.7274" damping="0.03637"/>
+  <joint name="seg4_twist" axis="1 0 0" range="-15 15" stiffness="0.5456" damping="0.02728"/>
+  <geom material="skin" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.01428" mass="0.025477"/>
+  <geom class="visual" material="sucker" type="sphere" size="0.0057" pos="0.0187 0 -0.0121"/>
+  <site name="seg4_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0171" rgba="0 0 0 0"/>
+<body name="seg5_" pos="0.0375 0 0" gravcomp="0.9669811320754716">
+  <joint name="seg5_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="1070" damping="53.5"/>
+  <joint name="seg5_bend_up" axis="0 1 0" range="-45 45" stiffness="0.6706" damping="0.03353"/>
+  <joint name="seg5_bend_side" axis="0 0 1" range="-45 45" stiffness="0.6706" damping="0.03353"/>
+  <joint name="seg5_twist" axis="1 0 0" range="-15 15" stiffness="0.5029" damping="0.02515"/>
+  <geom material="skin" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.01317" mass="0.021649"/>
+  <geom class="visual" material="sucker" type="sphere" size="0.0053" pos="0.0187 0 -0.0112"/>
+  <site name="seg5_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0158" rgba="0 0 0 0"/>
+<body name="seg6_" pos="0.0375 0 0" gravcomp="0.9669811320754716">
+  <joint name="seg6_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="979.3" damping="48.97"/>
+  <joint name="seg6_bend_up" axis="0 1 0" range="-45 45" stiffness="0.6137" damping="0.03069"/>
+  <joint name="seg6_bend_side" axis="0 0 1" range="-45 45" stiffness="0.6137" damping="0.03069"/>
+  <joint name="seg6_twist" axis="1 0 0" range="-15 15" stiffness="0.4603" damping="0.02301"/>
+  <geom material="skin" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.01205" mass="0.018133"/>
+  <geom class="visual" material="sucker" type="sphere" size="0.0048" pos="0.0187 0 -0.0102"/>
+  <site name="seg6_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0145" rgba="0 0 0 0"/>
+<body name="seg7_" pos="0.0375 0 0" gravcomp="0.9669811320754716">
+  <joint name="seg7_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="888.6" damping="44.43"/>
+  <joint name="seg7_bend_up" axis="0 1 0" range="-45 45" stiffness="0.5568" damping="0.02784"/>
+  <joint name="seg7_bend_side" axis="0 0 1" range="-45 45" stiffness="0.5568" damping="0.02784"/>
+  <joint name="seg7_twist" axis="1 0 0" range="-15 15" stiffness="0.4176" damping="0.02088"/>
+  <geom material="skin" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.01093" mass="0.014928"/>
+  <geom class="visual" material="sucker" type="sphere" size="0.0044" pos="0.0187 0 -0.0093"/>
+  <site name="seg7_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0131" rgba="0 0 0 0"/>
+<body name="seg8_" pos="0.0375 0 0" gravcomp="0.9669811320754716">
+  <joint name="seg8_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="797.8" damping="39.89"/>
+  <joint name="seg8_bend_up" axis="0 1 0" range="-45 45" stiffness="0.5" damping="0.025"/>
+  <joint name="seg8_bend_side" axis="0 0 1" range="-45 45" stiffness="0.5" damping="0.025"/>
+  <joint name="seg8_twist" axis="1 0 0" range="-15 15" stiffness="0.375" damping="0.01875"/>
+  <geom material="tip" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.00982" mass="0.012034"/>
+  <geom class="visual" material="sucker" type="sphere" size="0.0039" pos="0.0187 0 -0.0083"/>
+  <site name="seg8_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0118" rgba="0 0 0 0"/>
+<body name="seg9_" pos="0.0375 0 0" gravcomp="0.9669811320754716">
+  <joint name="seg9_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="707" damping="35.35"/>
+  <joint name="seg9_bend_up" axis="0 1 0" range="-45 45" stiffness="0.4431" damping="0.02215"/>
+  <joint name="seg9_bend_side" axis="0 0 1" range="-45 45" stiffness="0.4431" damping="0.02215"/>
+  <joint name="seg9_twist" axis="1 0 0" range="-15 15" stiffness="0.3323" damping="0.01662"/>
+  <geom material="tip" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.00870" mass="0.009452"/>
+  <geom class="visual" material="sucker" type="sphere" size="0.0035" pos="0.0187 0 -0.0074"/>
+  <site name="seg9_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0104" rgba="0 0 0 0"/>
+<body name="seg10_" pos="0.0375 0 0" gravcomp="0.9669811320754716">
+  <joint name="seg10_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="616.3" damping="30.81"/>
+  <joint name="seg10_bend_up" axis="0 1 0" range="-45 45" stiffness="0.3862" damping="0.01931"/>
+  <joint name="seg10_bend_side" axis="0 0 1" range="-45 45" stiffness="0.3862" damping="0.01931"/>
+  <joint name="seg10_twist" axis="1 0 0" range="-15 15" stiffness="0.2897" damping="0.01448"/>
+  <geom material="tip" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.00758" mass="0.0071814"/>
+  <geom class="visual" material="sucker" type="sphere" size="0.0030" pos="0.0187 0 -0.0064"/>
+  <site name="seg10_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0091" rgba="0 0 0 0"/>
+<body name="seg11_" pos="0.0375 0 0" gravcomp="0.9669811320754716">
+  <joint name="seg11_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="525.5" damping="26.28"/>
+  <joint name="seg11_bend_up" axis="0 1 0" range="-45 45" stiffness="0.3293" damping="0.01647"/>
+  <joint name="seg11_bend_side" axis="0 0 1" range="-45 45" stiffness="0.3293" damping="0.01647"/>
+  <joint name="seg11_twist" axis="1 0 0" range="-15 15" stiffness="0.247" damping="0.01235"/>
+  <geom material="tip" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.00647" mass="0.0052221"/>
+  <geom class="visual" material="sucker" type="sphere" size="0.0026" pos="0.0187 0 -0.0055"/>
+  <site name="seg11_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0078" rgba="0 0 0 0"/>
+<body name="seg12_" pos="0.0375 0 0" gravcomp="0.9669811320754716">
+  <joint name="seg12_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="434.8" damping="21.74"/>
+  <joint name="seg12_bend_up" axis="0 1 0" range="-45 45" stiffness="0.2725" damping="0.01362"/>
+  <joint name="seg12_bend_side" axis="0 0 1" range="-45 45" stiffness="0.2725" damping="0.01362"/>
+  <joint name="seg12_twist" axis="1 0 0" range="-15 15" stiffness="0.2044" damping="0.01022"/>
+  <geom material="tip" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.00535" mass="0.0035743"/>
+  <geom class="visual" material="sucker" type="sphere" size="0.0021" pos="0.0187 0 -0.0045"/>
+  <site name="seg12_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0064" rgba="0 0 0 0"/>
+<body name="seg13_" pos="0.0375 0 0" gravcomp="0.9669811320754716">
+  <joint name="seg13_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="344" damping="17.2"/>
+  <joint name="seg13_bend_up" axis="0 1 0" range="-45 45" stiffness="0.2156" damping="0.01078"/>
+  <joint name="seg13_bend_side" axis="0 0 1" range="-45 45" stiffness="0.2156" damping="0.01078"/>
+  <joint name="seg13_twist" axis="1 0 0" range="-15 15" stiffness="0.1617" damping="0.008085"/>
+  <geom material="tip" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.00423" mass="0.002238"/>
+  <geom class="visual" material="sucker" type="sphere" size="0.0017" pos="0.0187 0 -0.0036"/>
+  <site name="seg13_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0051" rgba="0 0 0 0"/>
+<body name="seg14_" pos="0.0375 0 0" gravcomp="0.9669811320754716">
+  <joint name="seg14_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="253.3" damping="12.66"/>
+  <joint name="seg14_bend_up" axis="0 1 0" range="-45 45" stiffness="0.1587" damping="0.007937"/>
+  <joint name="seg14_bend_side" axis="0 0 1" range="-45 45" stiffness="0.1587" damping="0.007937"/>
+  <joint name="seg14_twist" axis="1 0 0" range="-15 15" stiffness="0.119" damping="0.005952"/>
+  <geom material="tip" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.00312" mass="0.001213"/>
+  <geom class="visual" material="sucker" type="sphere" size="0.0012" pos="0.0187 0 -0.0026"/>
+  <site name="seg14_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0037" rgba="0 0 0 0"/>
+<body name="seg15_" pos="0.0375 0 0" gravcomp="0.9669811320754716">
+  <joint name="seg15_stretch" type="slide" axis="1 0 0" range="-0.0075 0.02625" stiffness="162.5" damping="8.127"/>
+  <joint name="seg15_bend_up" axis="0 1 0" range="-45 45" stiffness="0.1019" damping="0.005093"/>
+  <joint name="seg15_bend_side" axis="0 0 1" range="-45 45" stiffness="0.1019" damping="0.005093"/>
+  <joint name="seg15_twist" axis="1 0 0" range="-15 15" stiffness="0.07639" damping="0.00382"/>
+  <geom material="tip" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.00200" mass="0.00049951"/>
+  <geom class="visual" material="sucker" type="sphere" size="0.0008" pos="0.0187 0 -0.0017"/>
+  <site name="seg15_touch" type="capsule" fromto="0 0 0 0.0375 0 0" size="0.0024" rgba="0 0 0 0"/></body>
 </body>
 </body>
 </body>
@@ -218,15 +221,15 @@
       <!-- the siphon (funnel): swivels around the head (aim) and tips up or down (tilt), and squirts the mantle's water.
            At rest it points 20 degrees down; the tilt adds up to 45 degrees either way, so like a real octopus it can
            steer the jet up or down (a rudder to keep the head from nosediving). No collision: it only aims the jet -->
-      <body name="siphon" pos="0 0 -0.03" gravcomp="0.952">
+      <body name="siphon" pos="0 0 -0.012" gravcomp="0.9669811320754716">
         <joint name="siphon_aim" axis="0 0 1" range="-180 180" damping="0.5"/>
         <joint name="siphon_tilt" axis="0 1 0" range="-45 45" damping="0.5"/>
-        <!-- the siphon's mass (what the aim and tilt muscles move), kept as it was but invisible -->
-        <geom type="capsule" fromto="0.08 0 0 0.16 0 -0.029" size="0.02" contype="0" conaffinity="0" fluidshape="none" rgba="0 0 0 0"/>
+        <!-- the siphon's mass (what the aim and tilt muscles move), invisible -->
+        <geom type="capsule" fromto="0.032 0 0 0.064 0 -0.0116" size="0.008" contype="0" conaffinity="0" fluidshape="none" rgba="0 0 0 0"/>
         <!-- what shows: just the funnel's mouth, barely out from under the head -->
-        <geom class="visual" material="skin" type="capsule" fromto="0.095 0 0 0.108 0 -0.005" size="0.009"/>
+        <geom class="visual" material="skin" type="capsule" fromto="0.038 0 0 0.0432 0 -0.002" size="0.0036"/>
         <!-- the jet pushes the body opposite to where the water leaves: backwards and a bit up -->
-        <site name="jet" zaxis="-0.94 0 0.342" size="0.01" rgba="0 0 0 0"/>
+        <site name="jet" zaxis="-0.94 0 0.342" size="0.004" rgba="0 0 0 0"/>
       </body>
     </body>
   </worldbody>
@@ -251,42 +254,44 @@
   </tendon>
 
   <actuator>
-<motor name="sec0_bend_up" tendon="sec0_bend_up" ctrlrange="-1 1" gear="1.652"/>
-<motor name="sec0_bend_side" tendon="sec0_bend_side" ctrlrange="-1 1" gear="1.652"/>
-<motor name="sec0_twist" tendon="sec0_twist" ctrlrange="-1 1" gear="0.413"/>
-<motor name="sec0_stretch" tendon="sec0_stretch" ctrlrange="-0.286 1" gear="36.71"/>
-<motor name="sec1_bend_up" tendon="sec1_bend_up" ctrlrange="-1 1" gear="1.257"/>
-<motor name="sec1_bend_side" tendon="sec1_bend_side" ctrlrange="-1 1" gear="1.257"/>
-<motor name="sec1_twist" tendon="sec1_twist" ctrlrange="-1 1" gear="0.3143"/>
-<motor name="sec1_stretch" tendon="sec1_stretch" ctrlrange="-0.286 1" gear="27.94"/>
-<motor name="sec2_bend_up" tendon="sec2_bend_up" ctrlrange="-1 1" gear="0.8627"/>
-<motor name="sec2_bend_side" tendon="sec2_bend_side" ctrlrange="-1 1" gear="0.8627"/>
-<motor name="sec2_twist" tendon="sec2_twist" ctrlrange="-1 1" gear="0.2157"/>
-<motor name="sec2_stretch" tendon="sec2_stretch" ctrlrange="-0.286 1" gear="19.17"/>
-<motor name="sec3_bend_up" tendon="sec3_bend_up" ctrlrange="-1 1" gear="0.468"/>
-<motor name="sec3_bend_side" tendon="sec3_bend_side" ctrlrange="-1 1" gear="0.468"/>
-<motor name="sec3_twist" tendon="sec3_twist" ctrlrange="-1 1" gear="0.117"/>
-<motor name="sec3_stretch" tendon="sec3_stretch" ctrlrange="-0.286 1" gear="10.4"/>
-<adhesion name="seg0_sucker" body="seg0_" ctrlrange="0 1" gain="12.74"/>
-<adhesion name="seg1_sucker" body="seg1_" ctrlrange="0 1" gain="12.04"/>
-<adhesion name="seg2_sucker" body="seg2_" ctrlrange="0 1" gain="11.34"/>
-<adhesion name="seg3_sucker" body="seg3_" ctrlrange="0 1" gain="10.64"/>
-<adhesion name="seg4_sucker" body="seg4_" ctrlrange="0 1" gain="9.943"/>
-<adhesion name="seg5_sucker" body="seg5_" ctrlrange="0 1" gain="9.245"/>
-<adhesion name="seg6_sucker" body="seg6_" ctrlrange="0 1" gain="8.547"/>
-<adhesion name="seg7_sucker" body="seg7_" ctrlrange="0 1" gain="7.849"/>
-<adhesion name="seg8_sucker" body="seg8_" ctrlrange="0 1" gain="7.151"/>
-<adhesion name="seg9_sucker" body="seg9_" ctrlrange="0 1" gain="6.453"/>
-<adhesion name="seg10_sucker" body="seg10_" ctrlrange="0 1" gain="5.755"/>
-<adhesion name="seg11_sucker" body="seg11_" ctrlrange="0 1" gain="5.057"/>
-<adhesion name="seg12_sucker" body="seg12_" ctrlrange="0 1" gain="4.358"/>
-<adhesion name="seg13_sucker" body="seg13_" ctrlrange="0 1" gain="3.66"/>
-<adhesion name="seg14_sucker" body="seg14_" ctrlrange="0 1" gain="2.962"/>
-<adhesion name="seg15_sucker" body="seg15_" ctrlrange="0 1" gain="2.264"/>
+<motor name="sec0_bend_up" tendon="sec0_bend_up" ctrlrange="-1 1" gear="0.683"/>
+<motor name="sec0_bend_side" tendon="sec0_bend_side" ctrlrange="-1 1" gear="0.683"/>
+<motor name="sec0_twist" tendon="sec0_twist" ctrlrange="-1 1" gear="0.1708"/>
+<motor name="sec0_stretch" tendon="sec0_stretch" ctrlrange="-0.286 1" gear="36.43"/>
+<motor name="sec1_bend_up" tendon="sec1_bend_up" ctrlrange="-1 1" gear="0.5043"/>
+<motor name="sec1_bend_side" tendon="sec1_bend_side" ctrlrange="-1 1" gear="0.5043"/>
+<motor name="sec1_twist" tendon="sec1_twist" ctrlrange="-1 1" gear="0.1261"/>
+<motor name="sec1_stretch" tendon="sec1_stretch" ctrlrange="-0.286 1" gear="26.9"/>
+<motor name="sec2_bend_up" tendon="sec2_bend_up" ctrlrange="-1 1" gear="0.3257"/>
+<motor name="sec2_bend_side" tendon="sec2_bend_side" ctrlrange="-1 1" gear="0.3257"/>
+<motor name="sec2_twist" tendon="sec2_twist" ctrlrange="-1 1" gear="0.08142"/>
+<motor name="sec2_stretch" tendon="sec2_stretch" ctrlrange="-0.286 1" gear="17.37"/>
+<motor name="sec3_bend_up" tendon="sec3_bend_up" ctrlrange="-1 1" gear="0.147"/>
+<motor name="sec3_bend_side" tendon="sec3_bend_side" ctrlrange="-1 1" gear="0.147"/>
+<motor name="sec3_twist" tendon="sec3_twist" ctrlrange="-1 1" gear="0.03675"/>
+<motor name="sec3_stretch" tendon="sec3_stretch" ctrlrange="-0.286 1" gear="7.84"/>
+<adhesion name="seg0_sucker" body="seg0_" ctrlrange="0 1" gain="13.55"/>
+<adhesion name="seg1_sucker" body="seg1_" ctrlrange="0 1" gain="12.75"/>
+<adhesion name="seg2_sucker" body="seg2_" ctrlrange="0 1" gain="11.94"/>
+<adhesion name="seg3_sucker" body="seg3_" ctrlrange="0 1" gain="11.13"/>
+<adhesion name="seg4_sucker" body="seg4_" ctrlrange="0 1" gain="10.33"/>
+<adhesion name="seg5_sucker" body="seg5_" ctrlrange="0 1" gain="9.518"/>
+<adhesion name="seg6_sucker" body="seg6_" ctrlrange="0 1" gain="8.711"/>
+<adhesion name="seg7_sucker" body="seg7_" ctrlrange="0 1" gain="7.904"/>
+<adhesion name="seg8_sucker" body="seg8_" ctrlrange="0 1" gain="7.096"/>
+<adhesion name="seg9_sucker" body="seg9_" ctrlrange="0 1" gain="6.289"/>
+<adhesion name="seg10_sucker" body="seg10_" ctrlrange="0 1" gain="5.482"/>
+<adhesion name="seg11_sucker" body="seg11_" ctrlrange="0 1" gain="4.675"/>
+<adhesion name="seg12_sucker" body="seg12_" ctrlrange="0 1" gain="3.867"/>
+<adhesion name="seg13_sucker" body="seg13_" ctrlrange="0 1" gain="3.06"/>
+<adhesion name="seg14_sucker" body="seg14_" ctrlrange="0 1" gain="2.253"/>
+<adhesion name="seg15_sucker" body="seg15_" ctrlrange="0 1" gain="1.446"/>
     <position name="siphon_aim" joint="siphon_aim" kp="8" kv="0.3" forcerange="-4 4" inheritrange="1"/>
     <position name="siphon_tilt" joint="siphon_tilt" kp="8" kv="0.3" forcerange="-4 4" inheritrange="1"/>
-    <!-- up to 60 N, 4x its weight in water: one full squirt lifts it off. The environment stops it when the mantle is empty -->
-    <motor name="jet" site="jet" ctrlrange="0 1" gear="0 0 60 0 0 0"/>
+    <!-- up to 40 N, set by how it swims: mantle first with the arms spread, like a common octopus (Huffard 2006), its top
+         speed is ~1 m/s, the measured one (Wells, via Huffard 2006); with no drag at all on the arms it would reach 1.3 m/s.
+         The environment stops it when the mantle is empty -->
+    <motor name="jet" site="jet" ctrlrange="0 1" gear="0 0 40 0 0 0"/>
   </actuator>
 
   <sensor>

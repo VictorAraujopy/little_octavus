@@ -22,17 +22,17 @@ Action (163 numbers between -1 and 1), the arms first and the siphon last:
                                      jet (how hard it squirts)
     0 is always "no force" (relaxed muscle, loose sucker, no jet); suckers and jet treat anything below 0 as off
 
-The jet squirts the water in the mantle: a full jet empties it in 1 s, and it refills in 2 s while the jet rests
-(refilling only starts after 0.3 s relaxed in a row, so a squirt is a real squeeze, not a flicker).
-Jetting also stops the octopus's systemic heart, so it tires: 3 s of full jet in total, back after 30 s of rest.
+The jet squirts the water in the mantle: a full jet empties it in 0.44 s, and it refills in 0.4 s while the jet
+rests (refilling only starts after 0.1 s relaxed in a row, so a squirt is a real squeeze, not a flicker).
+Jetting also stops the octopus's systemic heart, so it tires: 5 s of full jet in total, back after ~13 min of rest.
 
 power is the metabolic cost in watts, what the food pays for: muscles pushing cost 4x their work (25% efficient),
 muscles braking 1/1.2 of it, holding force 10 W per kg of muscle at full force (even when nothing moves),
-holding suckers nothing, the jet its hydrodynamic power at 25%, plus 2.7 W just to be alive.
+holding suckers nothing, the jet its hydrodynamic power at 25%, plus a common octopus's resting metabolism.
 
 The reward is not decided here: the trainer passes a function reward_fn(info) -> float,
 and the environment hands over the facts of each step in the info dict:
-distance, previous_distance, reached, flipped, action, previous_action, vertical_speed, height, spin, power (metabolic watts), tips_touching (0 to 1: arms whose last section touches something), airborne (nothing touching the floor), facing (1 = eyes pointing at the target, -1 = back to it), dt.
+distance, previous_distance, reached, flipped, action, previous_action, vertical_speed, height, spin, power (metabolic watts), mass (kg), tips_touching (0 to 1: arms whose last section touches something), airborne (nothing touching the floor), facing (1 = eyes pointing at the target, -1 = back to it), dt.
 
 Watch the octopus moving randomly (on macOS the viewer needs mjpython):
     uv run mjpython world_octavus/environment.py
@@ -73,20 +73,24 @@ class OctopusEnv(gym.Env):
     # keep every observation number close to 1, so the brain's Tanh layers don't saturate
     muscle_speed_time = 0.1  # a muscle crossing its whole reach in 0.1 s reads 1
     touch_scale = 100.0  # a section gripping with its suckers presses up to ~90 N
-    tip_touch = 0.005  # newtons: a resting tip lies on the floor with ~0.01 N, so half of that counts as touching
+    tip_touch = 0.005  # newtons: a resting tip lies on the floor with ~0.08 N, a tip in the water with 0
     spin_scale = 5.0
-    jet_empty_time = 1.0
-    jet_refill_time = 2.0
+    # the mantle's jet cycle: 0.44 s squeezing, ~0.4 s refilling (measured in cuttlefish, Gladman & Askew 2022:
+    # the octopus's own cycle wasn't found)
+    jet_empty_time = 0.44
     jet_relaxed = 0.05
-    # the mantle only starts drawing water after this long relaxed in a row (estimate, in the range of an
-    # octopus/squid jet cycle); without it, flicking the jet on and off every step gave a smooth nonstop jet
-    jet_refill_delay = 0.3
-    jet_stamina_time = 3.0
-    jet_recovery_time = 30.0
-    funnel_radius = 0.02  # same as the siphon capsule in octopus.xml
+    # the mantle only starts drawing water after this long relaxed in a row (estimate); without it, flicking the
+    # jet on and off every step gave a smooth nonstop jet. Delay + refill = the measured 0.4 s
+    jet_refill_delay = 0.1
+    jet_refill_time = 0.3
+    # jetting stops the systemic heart, so it runs on an oxygen debt that only allows "a few metres" (Wells 1987):
+    # ~5 s of full jet at its ~1 m/s top speed (our reading of "a few"). The debt (~22 ml O2/kg) is repaid at
+    # ~100 ml O2/kg/h, the extra oxygen it can take up (2.4x routine, Wells 1983): ~13 min
+    jet_stamina_time = 5.0
+    jet_recovery_time = 790.0
+    funnel_radius = 0.008  # the siphon capsule in octopus.xml (scaled with the head: the real funnel's width wasn't found)
     muscle_efficiency = 0.25
     braking_efficiency = 1.2
-    basal_power = 2.7  # resting O2 use of a 32 kg octopus
     # W per kg of muscle held at full force, even without moving (estimate: mammal muscle models use
     # tens of W/kg at 37 C, and an octopus is cold-blooded, in ~20 C water)
     holding_rate = 10.0
@@ -107,6 +111,8 @@ class OctopusEnv(gym.Env):
             CURRICULUM_FILE.write_text(f"{self.farthest} {self.highest}\n")
 
         self.torso = m.body("torso").id
+        self.mass = m.body_subtreemass[self.torso]
+        self.basal_power = self._resting_metabolism()
         self.n_arms = sum(m.body(i).name.startswith("arm") for i in range(m.nbody))
         motor = {m.actuator(i).name: i for i in range(m.nu)}
         tendon = lambda name: m.tendon(name).id
@@ -217,6 +223,7 @@ class OctopusEnv(gym.Env):
             "height": self.data.xpos[self.torso][2],
             "spin": self.data.qvel[5],
             "power": self._metabolic_power(),
+            "mass": self.mass,
             "tips_touching": (self._section_touch()[:, -1] > self.tip_touch).mean(),
             "airborne": self.data.ncon == 0,
             "facing": self._facing_target(),
@@ -249,6 +256,13 @@ class OctopusEnv(gym.Env):
         if self.viewer is not None:
             self.viewer.close()
             self.viewer = None
+
+    def _resting_metabolism(self):
+        # watts a resting common octopus burns in 20 C water (Katsanevakis 2005: oxygen use from its weight),
+        # at 13.39 J of food per mg of oxygen
+        micromol_o2_per_hour = np.exp(25.24 - 6952.8 / 293.15) * (self.mass * 1000) ** 0.901
+        mg_o2_per_hour = micromol_o2_per_hour * 0.032
+        return mg_o2_per_hour * 13.39 / 3600
 
     def _metabolic_power(self):
         # arm and siphon muscles: work done pushing costs 1/0.25, work absorbed braking costs 1/1.2 (suckers hold for free)

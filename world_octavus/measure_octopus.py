@@ -40,6 +40,8 @@ def main():
     env = OctopusEnv(reward_fn=reward, curriculum=False)
     brain = Octavus_arms_brain()
     brain.load_state_dict(torch.load(CHECKPOINT))
+    # what it weighs in water: each body's weight minus what the water holds (its gravcomp)
+    weight_in_water = 9.81 * float(np.sum(env.model.body_mass * (1 - env.model.body_gravcomp)))
     suckers = [i for i in range(env.model.nu) if env.model.actuator_trntype[i] == mujoco.mjtTrn.mjTRN_BODY]
     sucker_touch_sensors = [env.model.sensor_adr[env.model.sensor(env.model.actuator(i).name.replace("_sucker", "_touch")).id]
                             for i in suckers]
@@ -119,7 +121,7 @@ def main():
         "air_pct": round(float(np.mean(off_floor)) * 100, 1),
         # [env] % of the time jetting. A real octopus mostly crawls and jets in short bursts; high = it relies on the jet
         "jet_pct": round(float(np.mean(jetting)) * 100, 1),
-        # [env] squirts per episode. Many short ones is how the mantle works (1 s squirt, then refill)
+        # [env] squirts per episode. Many short ones is how the mantle works (0.44 s squirt, then refill)
         "jet_pulses": round(float(np.mean(jet_pulses)), 1),
         # [env] lowest jet stamina in each episode, 0 to 1. 0 = it ran out; above ~0.3 = it saves some
         "lowest_stamina": round(float(np.mean(lowest_stamina)), 2),
@@ -139,7 +141,7 @@ def main():
         "tanh_push": round(float(np.median(tanh_slope)), 2),
         # [brain + env layout] average sucker command, 0 off to 1 full. No ideal by itself: what matters is gripping when it's touching
         "sucker_cmd": round(float(sucker_grip_command.mean()), 2),
-        # [env] real sucker pull on what it touches, newtons. Crawling needs grip; above ~17 N = holding more than its weight
+        # [env] real sucker pull on what it touches, newtons. Crawling needs grip; above its weight in water (printed below) = holding more than its weight
         "grip_n": round(float(np.mean(grip)), 1),
         # [env] % of arm segments touching something. High = crawling on its arms, low = swimming or floating
         "touching_pct": round(float(np.mean(touching)) * 100, 1),
@@ -165,7 +167,7 @@ def main():
     print(f"JET       on {row['jet_pct']}% of the time | {row['jet_pulses']} pulses per episode | lowest stamina {row['lowest_stamina']}")
     print(f"ENERGY    {row['power_w']} W | energy cost {row['energy_per_step']} per step | reward {row['reward_per_step']} per step")
     print(f"MUSCLES   commands at almost full force {row['pinned_pct']}% | by muscle:", almost_full_by_muscle)
-    print(f"SUCKERS   command {row['sucker_cmd']} (0 off, 1 full) | real grip {row['grip_n']} N (it weighs ~17 N in water)")
+    print(f"SUCKERS   command {row['sucker_cmd']} (0 off, 1 full) | real grip {row['grip_n']} N (it weighs {weight_in_water:.1f} N in water)")
     print(f"TANH      before-Tanh median {row['tanh_median']} | over 2: {row['tanh_over2_pct']}% | push that gets through {row['tanh_push']}"
           "  (jammed if over 2 keeps rising and push drops toward 0)")
     print(f"EXPLORE   {row['exploration']} (1.0 at birth; ~0.03 = stopped trying new things)")

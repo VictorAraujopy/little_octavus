@@ -19,10 +19,12 @@ def reward(info):
     #and here it knows where the target is without looking at it
     #muscle effort costs points: flapping the tentacles fast or slamming them wastes energy
     #real animals move the way that spends the least energy, that's what makes them look natural
-    #power is metabolic (what the food pays), 0.6 per kW
-    #log instead of a cap: a flailing newborn still pays only ~1 per step, but more power always costs more
+    #power is metabolic (what the food pays), per kg of octopus: the same effort costs the same for any body size
+    #0.021 per W/kg = the old 0.6 per kW on the old 35 kg body (now it weighs 2.9 kg)
+    #log instead of a cap: a flailing newborn (~420 W/kg) pays ~2.3 per step, but more power always costs more
     #(the old cap at 1.0 made everything above ~1700 W free, and it learned to burn 3000 W)
-    energy = math.log(1 + 0.6 * info["power"] / 1000)
+    watts_per_kg = info["power"] / info["mass"]
+    energy = math.log(1 + 0.021 * watts_per_kg)
     #no rule about keeping the tips on the floor: in water swimming is a healthy octopus move
     #(it swam all the time, so that cost was a fixed tax that never changed and taught nothing)
     score = progress - 0.05 * jerk - 0.05 * turn - energy

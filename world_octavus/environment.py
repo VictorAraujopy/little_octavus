@@ -24,6 +24,7 @@ Action (163 numbers between -1 and 1), the arms first and the siphon last:
 
 The jet squirts the water in the mantle: a full jet empties it in 0.44 s, and it refills in 0.4 s while the jet
 rests (refilling only starts after 0.1 s relaxed in a row, so a squirt is a real squeeze, not a flicker).
+The mantle works in a rhythm: once it runs empty it refills before squeezing again, so holding the jet on swims in pulses.
 Jetting also stops the octopus's systemic heart, so it tires: 5 s of full jet in total, back after ~13 min of rest.
 
 power is the metabolic cost in watts, what the food pays for: muscles pushing cost 4x their work (25% efficient),
@@ -198,6 +199,7 @@ class OctopusEnv(gym.Env):
         self.mantle_water = 1.0
         self.stamina = 1.0
         self.relaxed_time = 0.0
+        self.refilling = False
         self.dt = m.opt.timestep * self.physics_steps
         self.target = np.zeros(3)
 
@@ -225,6 +227,7 @@ class OctopusEnv(gym.Env):
         self.mantle_water = 1.0
         self.stamina = 1.0
         self.relaxed_time = 0.0
+        self.refilling = False
         return self._observe(), {}
 
     def step(self, action):
@@ -357,15 +360,22 @@ class OctopusEnv(gym.Env):
         requested = self.data.ctrl[self.jet]
         drain = self.dt / self.jet_empty_time
         tire = self.dt / self.jet_stamina_time
-        jet = min(requested, self.mantle_water / drain, self.stamina / tire)
+        # once empty, the mantle fills up before the next squeeze even if the jet is still wanted: holding the jet
+        # on swims in pulses. Without this, a brain that held it on emptied the mantle once and never jetted again
+        if self.mantle_water <= 0.0:
+            self.refilling = True
+        elif self.mantle_water >= 1.0:
+            self.refilling = False
+        squeezing = requested >= self.jet_relaxed and not self.refilling
+        jet = min(requested, self.mantle_water / drain, self.stamina / tire) if squeezing else 0.0
         self.data.ctrl[self.jet] = jet
         # max(0, ...): float rounding would leave them at -1e-16
         self.mantle_water = max(0.0, self.mantle_water - jet * drain)
         self.stamina = max(0.0, self.stamina - jet * tire)
-        if requested < self.jet_relaxed:
-            self.relaxed_time += self.dt
-        else:
+        if squeezing:
             self.relaxed_time = 0.0
+        else:
+            self.relaxed_time += self.dt
         if self.relaxed_time >= self.jet_refill_delay:
             self.mantle_water = min(1.0, self.mantle_water + self.dt / self.jet_refill_time)
             self.stamina = min(1.0, self.stamina + self.dt / self.jet_recovery_time)

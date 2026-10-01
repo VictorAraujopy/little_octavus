@@ -18,3 +18,4 @@ CLAUDE.md
 MUJOCO_LOG.TXT
 measurements.csv
 curriculum.txt
+train.log

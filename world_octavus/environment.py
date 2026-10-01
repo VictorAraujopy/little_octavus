@@ -47,7 +47,7 @@ import mujoco
 import mujoco.viewer
 import numpy as np
 
-from world_octavus.build_octopus import SECTIONS, SEGMENTS, section_of
+from world_octavus.build_octopus import ARM_LENGTH, SECTIONS, SEGMENTS, section_of, segment_radius
 
 XML = Path(__file__).resolve().parent / "octopus.xml"
 CURRICULUM_FILE = Path(__file__).resolve().parents[1] / "curriculum.txt"
@@ -93,6 +93,13 @@ class OctopusEnv(gym.Env):
     # W per kg of muscle held at full force, even without moving (estimate: mammal muscle models use
     # tens of W/kg at 37 C, and an octopus is cold-blooded, in ~20 C water)
     holding_rate = 10.0
+    # Hill's force-velocity: a muscle loses force the faster it shortens, and resists harder while being stretched.
+    # Fastest shortening, in muscle lengths per second, measured in common octopus arms (Zullo et al. 2022):
+    # longitudinal muscles 0.91 (bend, shorten, twist), transverse 0.36 (they squeeze the arm thinner to stretch it)
+    longitudinal_vmax = 0.91
+    transverse_vmax = 0.36
+    hill_curvature = 0.25  # how sharply force drops with speed (Hill's a/F0): the classic value, an estimate
+    eccentric_max = 1.5  # force while being stretched fast, times the held force (classic 1.5-1.8, an estimate)
 
     def __init__(self, reward_fn=None, render_mode=None, xml=XML, curriculum=True):
         self.model = mujoco.MjModel.from_xml_path(str(xml))
@@ -166,6 +173,23 @@ class OctopusEnv(gym.Env):
                 self.muscle_mass[i] = m.body_mass[m.jnt_bodyid[target]]
         self.max_force = np.where(m.actuator_forcelimited.astype(bool),
                                   np.abs(m.actuator_forcerange).max(axis=1), np.abs(m.actuator_ctrlrange).max(axis=1))
+        # for Hill: turn each arm muscle's tendon speed into the muscle's own lengths per second.
+        # A bend/twist tendon is the sum of its section's joint angles: the muscle on that side, at the arm's radius,
+        # shortens by radius x angle. A stretch tendon is the section's change in length, in meters
+        self.arm_muscles = np.flatnonzero(m.actuator_trntype == mujoco.mjtTrn.mjTRN_TENDON)
+        self.arm_muscle_tendons = m.actuator_trnid[self.arm_muscles, 0]
+        self.strain_per_tendon = np.zeros(len(self.arm_muscles))
+        self.is_stretch = np.zeros(len(self.arm_muscles), dtype=bool)
+        for j, tendon in enumerate(self.arm_muscle_tendons):
+            section, kind = m.tendon(tendon).name.rstrip("0123456789")[len("sec"):].split("_", 1)  # "sec2_bend_up3"
+            segments = [i for i in range(SEGMENTS) if section_of(i) == int(section)]
+            muscle_length = len(segments) * ARM_LENGTH / SEGMENTS
+            if kind == "stretch":
+                self.strain_per_tendon[j] = 1 / muscle_length
+                self.is_stretch[j] = True
+            else:
+                self.strain_per_tendon[j] = np.mean([segment_radius(i) for i in segments]) / muscle_length
+        self.commanded_activation = np.zeros(len(self.arm_muscles))
         self.jet = m.actuator("jet").id
         self.max_thrust = m.actuator_gear[self.jet][2]
         self.siphon_qpos = m.jnt_qposadr[m.joint("siphon_aim").id]
@@ -211,7 +235,12 @@ class OctopusEnv(gym.Env):
         wanted = action[self.action_of_motor]
         self.data.ctrl[:] = np.where(wanted >= 0, wanted * high, wanted * -low)
         self._squirt()
-        mujoco.mj_step(self.model, self.data, nstep=self.physics_steps)
+        commanded = self.data.ctrl[self.arm_muscles].copy()
+        self.commanded_activation = np.abs(commanded) / self.max_force[self.arm_muscles]
+        for _ in range(self.physics_steps):
+            # Hill: the faster an arm muscle is shortening right now, the less of the commanded force it gets
+            self.data.ctrl[self.arm_muscles] = commanded * self._force_velocity(commanded)
+            mujoco.mj_step(self.model, self.data)
         self.step_count += 1
 
         previous_distance, self.distance = self.distance, self._distance_to_target()
@@ -262,6 +291,18 @@ class OctopusEnv(gym.Env):
             self.viewer.close()
             self.viewer = None
 
+    def _force_velocity(self, commanded):
+        # each arm muscle's shortening speed, in its own lengths per second (negative = being stretched)
+        speed = np.sign(commanded) * self.data.ten_velocity[self.arm_muscle_tendons] * self.strain_per_tendon
+        vmax = np.where(self.is_stretch & (commanded > 0), self.transverse_vmax, self.longitudinal_vmax)
+        shortening = np.clip(speed / vmax, 0.0, None)
+        stretched = np.clip(-speed / vmax, 0.0, None)
+        concentric = np.clip((1 - shortening) / (1 + shortening / self.hill_curvature), 0.0, None)
+        # being stretched: the force rises toward eccentric_max, as steeply at 0 as it falls on the shortening side
+        steepness = (1 + 1 / self.hill_curvature) / (self.eccentric_max - 1)
+        eccentric = self.eccentric_max - (self.eccentric_max - 1) / (1 + steepness * stretched)
+        return np.where(speed >= 0, concentric, eccentric)
+
     def _settle(self):
         # 3 s with every motor at 0 (no force): the arms fall onto the floor and the springs curl the tips
         mujoco.mj_resetData(self.model, self.data)
@@ -285,7 +326,10 @@ class OctopusEnv(gym.Env):
         work = (force * self.data.actuator_velocity)[self.muscles]
         muscles = work.clip(min=0).sum() / self.muscle_efficiency - work.clip(max=0).sum() / self.braking_efficiency
         # holding force costs even when nothing moves (without this, a muscle clenched at full force was free)
-        activation = np.abs(force[self.muscles]) / self.max_force[self.muscles]
+        activation = np.abs(force) / self.max_force
+        # an arm muscle's effort is what was commanded: Hill lowers the force it gets while shortening, not the effort
+        activation[self.arm_muscles] = self.commanded_activation
+        activation = activation[self.muscles]
         holding = self.holding_rate * (activation * self.muscle_mass[self.muscles]).sum()
         return muscles + holding + self._jet_power() / self.muscle_efficiency + self.basal_power
 

@@ -90,7 +90,7 @@ class Octavus_arms_brain(nn.Module):
         #arm network, the same one for all 8 arms: what this arm feels + its order + where it is -> its 20 commands
         #8 arms use it every step, so every step gives it 8 examples to learn from
         self.arm = nn.Sequential(
-            nn.Linear(n_arm_x + n_order + 2, 128),
+            nn.Linear(n_arm_x + n_order + 2 + 3, 128), #3 from what the arm sense the prey
             nn.Tanh(),
             nn.Linear(128, 128),
             nn.Tanh(),
@@ -114,7 +114,14 @@ class Octavus_arms_brain(nn.Module):
         orders = torch.tanh(orders_z).reshape(*x.shape[:-1], self.n_arms, self.n_order)
         arms_x = x[..., :self.n_arms * self.n_arm_x].reshape(*x.shape[:-1], self.n_arms, self.n_arm_x)
         position = self.arm_position.expand(*x.shape[:-1], self.n_arms, 2)
-        arms_z = self.arm(torch.cat([arms_x, orders, position], dim=-1)).flatten(-2)  #8 arms x 20, in a row
+        body_x = x[..., self.n_arms * self.n_arm_x:]
+        target = body_x[..., :3] #get the observation number and pass for the arms see below future me the math do the job
+        cos, sin = self.arm_position[:, 0], self.arm_position[:, 1]
+        target_ahead = target[..., None, 0] * cos + target[..., None, 1] * sin
+        target_left = -target[..., None, 0] * sin + target[..., None, 1] * cos
+        target_up = target[..., None, 2].expand_as(target_ahead)
+        target_seen_by_arm = torch.stack([target_ahead, target_left, target_up], dim=-1)
+        arms_z = self.arm(torch.cat([arms_x, orders, position, target_seen_by_arm], dim=-1)).flatten(-2)  #8 arms x 20, in a row
         siphon_z = self.siphon(thought)
         return arms_z, siphon_z, orders_z
 

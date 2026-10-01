@@ -1,10 +1,10 @@
 """
-Octavus environment in the Gymnasium format: the octopus has to walk to a target on the sea floor.
+Octavus environment in the Gymnasium format: the octopus has to get to a target, on the sea floor or up in the water.
 
-Each episode the octopus starts at the center and the target appears in a random direction, 3-6 m away.
+Each episode the octopus starts at the center and the target appears in a random direction, 3-6 m away, on the floor.
 With curriculum=True (the default, used by training) targets start close, 0.5-1 m, and move out 0.5 m each time
-it reaches at least half of its last 20 targets, until they are back at 3-6 m. The current level is printed
-and saved to curriculum.txt in the project root.
+it reaches at least half of its last 20 targets, until they are at 3-6 m. From then on each level lifts them
+0.25 m higher, up to 6 m. The current level is printed and saved to curriculum.txt in the project root.
 
 Each arm is a soft tentacle (see build_octopus.py): 16 segments in 4 sections, and each section has 4 muscles
 (bend up/down, bend sideways, twist, stretch/shorten) plus the suckers of its segments.
@@ -61,9 +61,12 @@ class OctopusEnv(gym.Env):
     max_steps = 2000
     target_radius = 0.15
     target_distance = (3.0, 6.0)
-    # curriculum: a target always lands between half and all of the current farthest distance
+    target_height = (0.0, 6.0)  # meters above where its head rests; 0 = on the floor
+    resting_height = 0.125  # the head's center when it lies still on the floor
+    # curriculum: a target always lands between half and all of the current farthest distance (and highest height)
     curriculum_first_far = 1.0  # meters: close enough to bump into while it's still learning to move
     curriculum_step = 0.5  # how much farther each level goes, up to target_distance's 6 m
+    curriculum_height_step = 0.25  # once at 6 m away, how much higher each level goes
     curriculum_window = 20  # episodes looked at to decide
     curriculum_pass = 0.5  # share of those it must reach to level up
     initial_noise = 0.1  # fraction of each joint's range
@@ -98,9 +101,10 @@ class OctopusEnv(gym.Env):
 
         self.curriculum = curriculum
         self.farthest = self.curriculum_first_far if curriculum else self.target_distance[1]
+        self.highest = self.target_height[0]  # the real task stays on the floor, where the crab will be
         self.recent_reached = deque(maxlen=self.curriculum_window)
         if curriculum:
-            CURRICULUM_FILE.write_text(f"{self.farthest}\n")
+            CURRICULUM_FILE.write_text(f"{self.farthest} {self.highest}\n")
 
         self.torso = m.body("torso").id
         self.n_arms = sum(m.body(i).name.startswith("arm") for i in range(m.nbody))
@@ -161,7 +165,7 @@ class OctopusEnv(gym.Env):
         self.stamina = 1.0
         self.relaxed_time = 0.0
         self.dt = m.opt.timestep * self.physics_steps
-        self.target = np.zeros(2)
+        self.target = np.zeros(3)
 
         self.action_space = gym.spaces.Box(-1.0, 1.0, (self.n_actions,), np.float32)
         observation_size = self._observe().size
@@ -175,8 +179,9 @@ class OctopusEnv(gym.Env):
         angle = self.np_random.uniform(0, 2 * np.pi)
         self._level_up_if_ready()
         distance = self.np_random.uniform(self.farthest / 2, self.farthest)
-        self.target = distance * np.array([np.cos(angle), np.sin(angle)])
-        self.data.mocap_pos[0][:2] = self.target
+        height = self.np_random.uniform(self.highest / 2, self.highest)
+        self.target = np.array([distance * np.cos(angle), distance * np.sin(angle), self.resting_height + height])
+        self.data.mocap_pos[0] = self.target
 
         mujoco.mj_forward(self.model, self.data)
         self.step_count = 0
@@ -256,15 +261,20 @@ class OctopusEnv(gym.Env):
         return muscles + holding + self._jet_power() / self.muscle_efficiency + self.basal_power
 
     def _level_up_if_ready(self):
-        # moves the targets out once it reaches at least half of its last 20; the new level starts a fresh count
+        # once it reaches at least half of its last 20: first the targets move out, then up; the new level starts a fresh count
         full_window = len(self.recent_reached) == self.curriculum_window
-        if not (self.curriculum and full_window and self.farthest < self.target_distance[1]):
+        all_levels_done = self.farthest >= self.target_distance[1] and self.highest >= self.target_height[1]
+        if not self.curriculum or not full_window or all_levels_done:
             return
         if np.mean(self.recent_reached) >= self.curriculum_pass:
-            self.farthest = min(self.farthest + self.curriculum_step, self.target_distance[1])
+            if self.farthest < self.target_distance[1]:
+                self.farthest = min(self.farthest + self.curriculum_step, self.target_distance[1])
+            else:
+                self.highest = min(self.highest + self.curriculum_height_step, self.target_height[1])
             self.recent_reached.clear()
-            CURRICULUM_FILE.write_text(f"{self.farthest}\n")
-            print(f"curriculum: targets now {self.farthest / 2:.2f}-{self.farthest:.2f} m away", flush=True)
+            CURRICULUM_FILE.write_text(f"{self.farthest} {self.highest}\n")
+            print(f"curriculum: targets now {self.farthest / 2:.2f}-{self.farthest:.2f} m away, "
+                  f"{self.highest / 2:.2f}-{self.highest:.2f} m up", flush=True)
 
     def _squirt(self):
         # the mantle is a pump: it squirts while it has water and only refills once the jet has been relaxed
@@ -297,16 +307,15 @@ class OctopusEnv(gym.Env):
     def _facing_target(self):
         # cosine of the angle between where the eyes point (the body's +x) and the target, on the floor plane
         rotation = self.data.xmat[self.torso].reshape(3, 3)
-        seen = rotation.T @ (np.array([*self.target, 0.0]) - self.data.xpos[self.torso])
+        seen = rotation.T @ (self.target - self.data.xpos[self.torso])
         return seen[0] / (np.hypot(seen[0], seen[1]) + 1e-8)
 
     def _distance_to_target(self):
-        return np.linalg.norm(self.data.xpos[self.torso][:2] - self.target)
+        return np.linalg.norm(self.data.xpos[self.torso] - self.target)
 
     def _observe(self):
         rotation = self.data.xmat[self.torso].reshape(3, 3)
         position = self.data.xpos[self.torso]
-        target_3d = np.array([*self.target, 0.0])
 
         per_section = np.concatenate([
             self.data.ten_length[self.section_muscles] / self.muscle_reach,
@@ -314,7 +323,7 @@ class OctopusEnv(gym.Env):
             self._section_touch()[..., None] / self.touch_scale,
         ], axis=2)
 
-        target_seen = rotation.T @ (target_3d - position)
+        target_seen = rotation.T @ (self.target - position)
         up_seen = rotation.T @ [0.0, 0.0, 1.0]
         torso_velocity = rotation.T @ self.data.qvel[:3]
         torso_spin = self.data.qvel[3:6] / self.spin_scale

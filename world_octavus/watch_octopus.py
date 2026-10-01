@@ -5,7 +5,7 @@ and see it improve without restarting.
 
 Run (on macOS the viewer needs mjpython):  uv run mjpython world_octavus/watch_octopus.py
 With exploration (the random tries the trainer sees):  add --explore
-Targets as close as the training's right now (its curriculum), instead of the real 3-6 m:  add --close
+Targets as far and as high as the training's right now (its curriculum), instead of the real 3-6 m on the floor:  add --close
 """
 
 import sys
@@ -34,15 +34,17 @@ def load_latest(brain):
 
 
 def follow_training_distance(env):
-    # --close: targets as far as the training's curriculum is now (only reads curriculum.txt, never writes it)
+    # --close: targets as far and as high as the training's curriculum is now (only reads curriculum.txt, never writes it)
     if close and CURRICULUM_FILE.exists():
-        env.farthest = float(CURRICULUM_FILE.read_text())
+        farthest, highest = CURRICULUM_FILE.read_text().split()
+        env.farthest = float(farthest)
+        env.highest = float(highest)
 
 
 if not CHECKPOINT.exists():
     raise SystemExit(f"no {CHECKPOINT.name} yet: run the training first (uv run brain_octavus/train.py)")
 
-# curriculum off: shows the real task (targets 3-6 m) and leaves curriculum.txt to the training
+# curriculum off: shows the real task (targets 3-6 m, on the floor) and leaves curriculum.txt to the training
 env = OctopusEnv(render_mode="human", curriculum=False)
 brain = Octavus_arms_brain()
 load_latest(brain)

@@ -1,5 +1,3 @@
-import math
-
 def reward(info):
     progress = (info["previous_distance"] - info["distance"]) / info["dt"]
     #dt = time for step
@@ -20,11 +18,13 @@ def reward(info):
     #muscle effort costs points: flapping the tentacles fast or slamming them wastes energy
     #real animals move the way that spends the least energy, that's what makes them look natural
     #power is metabolic (what the food pays), per kg of octopus: the same effort costs the same for any body size
-    #0.021 per W/kg = the old 0.6 per kW on the old 35 kg body (now it weighs 2.9 kg)
-    #log instead of a cap: a flailing newborn (~420 W/kg) pays ~2.3 per step, but more power always costs more
+    #straight line: every W/kg costs the same, like food paid per joule. The old log went flat at high power
+    #(at 580 W/kg, saving 100 W/kg was worth only 0.16), so flailing light arms barely cost more than calm ones
+    #0.013: jetting at 1 m/s (~190 W/kg) costs ~25% of its progress, crawling like a real octopus ~1%,
+    #a flailing newborn (~420 W/kg) ~5.5 per step; saving 100 W/kg is worth 1.3
     #(the old cap at 1.0 made everything above ~1700 W free, and it learned to burn 3000 W)
     watts_per_kg = info["power"] / info["mass"]
-    energy = math.log(1 + 0.021 * watts_per_kg)
+    energy = 0.013 * watts_per_kg
     #no rule about keeping the tips on the floor: in water swimming is a healthy octopus move
     #(it swam all the time, so that cost was a fixed tax that never changed and taught nothing)
     score = progress - 0.05 * jerk - 0.05 * turn - energy

@@ -62,7 +62,7 @@ class OctopusEnv(gym.Env):
     target_radius = 0.15
     target_distance = (3.0, 6.0)
     target_height = (0.0, 6.0)  # meters above where its head rests; 0 = on the floor
-    resting_height = 0.125  # the head's center when it lies still on the floor
+    resting_height = 0.135  # the head's center when it lies still on the floor
     # curriculum: a target always lands between half and all of the current farthest distance (and highest height)
     curriculum_first_far = 1.0  # meters: close enough to bump into while it's still learning to move
     curriculum_step = 0.5  # how much farther each level goes, up to target_distance's 6 m

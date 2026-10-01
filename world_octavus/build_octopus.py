@@ -38,6 +38,15 @@ BUOYANCY = 1025.0 / TISSUE_DENSITY  # 0.967: the water holds this much of its we
 # only the organs pull it down a little (estimate). With the arms' buoyancy, lying sideways it nosedived
 MANTLE_BUOYANCY = 0.99
 DAMPING = 0.05  # seconds: each spring's damping is its stiffness times this, so the arm doesn't ring
+ARM_ROOT = 0.04  # meters from the mouth to where each arm starts
+ARM_SLOPE = 25  # degrees the arm's base slopes down, so the arm reaches the floor
+# the web joins the arms out to ~25% of the arm's length from the mouth (web depth index 22-29 in O. vulgaris,
+# Leite et al. 2008). Only drawn: it has no weight and pushes no water
+WEB_DEPTH = 0.25 * ARM_LENGTH
+# a resting arm isn't straight: from segment CURL_FROM on, its springs rest bent sideways, more and more toward
+# the tip (up to CURL degrees per segment), so the tip curls into a loose spiral. A pose, not a measured number
+CURL = 30
+CURL_FROM = 6
 
 XML = Path(__file__).resolve().parent / "octopus.xml"
 
@@ -50,9 +59,10 @@ def section_of(i):
     return i * SECTIONS // SEGMENTS
 
 
-def joint(name, kind, axis, low, high, stiffness):
+def joint(name, kind, axis, low, high, stiffness, rest=0.0):
+    # rest: where the spring pulls the joint back to when no muscle works (springref)
     kind_attr = ' type="slide"' if kind == "slide" else ""
-    return (f'<joint name="{name}"{kind_attr} axis="{axis}" range="{low:.4g} {high:.4g}" '
+    return (f'<joint name="{name}"{kind_attr} axis="{axis}" range="{low:.4g} {high:.4g}" springref="{rest:.4g}" '
             f'stiffness="{stiffness:.4g}" damping="{stiffness * DAMPING:.4g}"/>')
 
 
@@ -66,8 +76,16 @@ def arm():
     for i in range(SEGMENTS):
         r = segment_radius(i)
         pos = "0 0 0" if i == 0 else f"{length:.4f} 0 0"
-        tilt = ' euler="0 25 0"' if i == 0 else ""  # the base slopes down so the arm reaches the floor
+        tilt = f' euler="0 {ARM_SLOPE} 0"' if i == 0 else ""
         material = "skin" if section_of(i) < 2 else "tip"
+        curl = CURL * max(0, i - CURL_FROM) / (SEGMENTS - 1 - CURL_FROM)
+        web = ""
+        from_mouth = ARM_ROOT + (i + 0.5) * length * np.cos(np.radians(ARM_SLOPE))
+        if from_mouth < WEB_DEPTH:
+            # a thin flap out to each side that moves with the arm: a bit past halfway to the next arm and a bit
+            # longer than the segment, so the flaps overlap into one membrane
+            half_width = 1.2 * from_mouth * np.sin(np.radians(180 / ARMS))
+            web = f'\n  <geom class="visual" type="ellipsoid" size="{length:.4f} {half_width:.4f} 0.004" pos="{length / 2:.4f} 0 0"/>'
         bend_k = torque(i) / np.radians(BEND)
         twist_k = TWIST_SHARE * torque(i) / np.radians(TWIST)
         stretch_k = PULL * r / BASE_RADIUS / (STRETCH * length)
@@ -78,9 +96,9 @@ def arm():
 <body name="seg{i}_" pos="{pos}"{tilt} gravcomp="{BUOYANCY}">
   {joint(f"seg{i}_stretch", "slide", "1 0 0", -SHORTEN * length, STRETCH * length, stretch_k)}
   {joint(f"seg{i}_bend_up", "hinge", "0 1 0", -BEND, BEND, bend_k)}
-  {joint(f"seg{i}_bend_side", "hinge", "0 0 1", -BEND, BEND, bend_k)}
+  {joint(f"seg{i}_bend_side", "hinge", "0 0 1", -BEND, BEND, bend_k, rest=curl)}
   {joint(f"seg{i}_twist", "hinge", "1 0 0", -TWIST, TWIST, twist_k)}
-  <geom material="{material}" type="capsule" fromto="0 0 0 {length:.4f} 0 0" size="{r:.5f}" mass="{mass:.5g}"/>
+  <geom material="{material}" type="capsule" fromto="0 0 0 {length:.4f} 0 0" size="{r:.5f}" mass="{mass:.5g}"/>{web}
   <geom class="visual" material="sucker" type="sphere" size="{0.4 * r:.4f}" pos="{length / 2:.4f} 0 {-0.85 * r:.4f}"/>
   <site name="seg{i}_touch" type="capsule" fromto="0 0 0 {length:.4f} 0 0" size="{1.2 * r:.4f}" rgba="0 0 0 0"/>"""
         close += "</body>\n"
@@ -155,7 +173,7 @@ def octopus():
     <geom name="floor" type="plane" size="0 0 0.05" material="sand" contype="1" conaffinity="1" fluidshape="none"/>
 
     <!-- a ball where the head has to get: it rests on the floor at height 0 and floats up as the targets rise -->
-    <body name="target" mocap="true" pos="2 0 0.125">
+    <body name="target" mocap="true" pos="2 0 0.135">
       <geom class="visual" type="sphere" size="0.12" rgba="1 0.25 0.2 0.7"/>
     </body>
 
@@ -176,7 +194,7 @@ def octopus():
       <geom class="visual" material="pupil" type="ellipsoid" size="0.0076 0.0012 0.0024" pos="0.0052 -0.05176 0.02588" euler="-26.6 0 0"/>
 
       <replicate count="{ARMS}" euler="0 0 {360 / ARMS:g}">
-        <body name="arm" pos="0.03696 0.01532 -0.02" euler="0 0 22.5">
+        <body name="arm" pos="{ARM_ROOT * np.cos(np.radians(180 / ARMS)):.5f} {ARM_ROOT * np.sin(np.radians(180 / ARMS)):.5f} -0.02" euler="0 0 {180 / ARMS:g}">
 {arm_bodies}
         </body>
       </replicate>

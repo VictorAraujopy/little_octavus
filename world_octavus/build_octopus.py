@@ -155,8 +155,8 @@ def octopus():
       <!-- octopus mantle, overlapping the head sphere so both read as one smooth egg (not two stacked balls).
            Arms are 3-5x its length: ~20 cm for 60 cm arms (the old 40 cm one looked like a squid) -->
       <geom name="mantle" class="visual" type="ellipsoid" size="0.13 0.123 0.165" pos="-0.035 0 0.055" euler="0 -28 0"/>
-      <!-- the web only fills between the arm roots (bigger, it showed as a plate under the arms) -->
-      <geom name="web" class="visual" type="ellipsoid" size="0.145 0.145 0.05" pos="0 0 -0.06"/>
+      <!-- the web only fills between the arm roots: past them it showed as a plate under the arms, or a stub between them -->
+      <geom name="web" class="visual" type="ellipsoid" size="0.12 0.12 0.035" pos="0 0 -0.06"/>
       <!-- amber eyes half sunk into the sides of the head, with the octopus's horizontal slit pupil -->
       <geom class="visual" material="eye" type="sphere" size="0.034" pos="0.01 0.1 0.05"/>
       <geom class="visual" material="eye" type="sphere" size="0.034" pos="0.01 -0.1 0.05"/>
@@ -177,8 +177,8 @@ def octopus():
         <joint name="siphon_tilt" axis="0 1 0" range="-45 45" damping="0.5"/>
         <!-- the siphon's mass (what the aim and tilt muscles move), kept as it was but invisible -->
         <geom type="capsule" fromto="0.08 0 0 0.16 0 -0.029" size="0.02" contype="0" conaffinity="0" fluidshape="none" rgba="0 0 0 0"/>
-        <!-- what shows: a short funnel peeking ~2 cm out from under the head, like a real octopus's -->
-        <geom class="visual" material="skin" type="capsule" fromto="0.09 0 0 0.12 0 -0.011" size="0.013"/>
+        <!-- what shows: just the funnel's mouth, barely out from under the head -->
+        <geom class="visual" material="skin" type="capsule" fromto="0.095 0 0 0.108 0 -0.005" size="0.009"/>
         <!-- the jet pushes the body opposite to where the water leaves: backwards and a bit up -->
         <site name="jet" zaxis="-0.94 0 0.342" size="0.01" rgba="0 0 0 0"/>
       </body>

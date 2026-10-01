@@ -93,7 +93,7 @@ for lap in range(n_laps):
             loss.backward() # the gradient is stored in the onw weight
             #adjust the weights
             optimizer.step()
-            brain.exploration.data.clamp_(max=0.0)#this clamp
+            brain.exploration.data.clamp_(max=-0.69)#this clamp; -0.69 = log of 0.5: at 1 the draw was almost random and so costly it curled into a ball
 
     print(f"lap {lap}: reward {sum(memory_reward):+.1f} | reached {reached} | exploration {brain.exploration.exp().mean():.2f}", flush=True)
     if lap % 10 == 0:

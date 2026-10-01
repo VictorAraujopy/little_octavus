@@ -62,7 +62,6 @@ class OctopusEnv(gym.Env):
     target_radius = 0.15
     target_distance = (3.0, 6.0)
     target_height = (0.0, 6.0)  # meters above where its head rests; 0 = on the floor
-    resting_height = 0.135  # the head's center when it lies still on the floor
     # curriculum: a target always lands between half and all of the current farthest distance (and highest height)
     curriculum_first_far = 1.0  # meters: close enough to bump into while it's still learning to move
     curriculum_step = 0.5  # how much farther each level goes, up to target_distance's 6 m
@@ -147,6 +146,11 @@ class OctopusEnv(gym.Env):
         self.joint_qpos = m.jnt_qposadr[joint_ids]
         self.joint_noise = self.initial_noise * (m.jnt_range[joint_ids, 1] - m.jnt_range[joint_ids, 0]) / 2
 
+        # the body as the XML writes it has straight arms poking ~15 cm into the floor, and that first shove made the
+        # light arms blow up now and then: let it settle once with no muscle working, and start every episode there
+        self.resting_pose = self._settle()
+        self.resting_height = self.resting_pose[2]  # the head's center when it lies still on the floor
+
         # step() maps the brain's 0 to "no force", which needs every motor's range to include 0
         assert (m.actuator_ctrlrange[:, 0] <= 0).all() and (m.actuator_ctrlrange[:, 1] >= 0).all()
         self.muscles = np.isin(m.actuator_trntype, [mujoco.mjtTrn.mjTRN_JOINT, mujoco.mjtTrn.mjTRN_TENDON])
@@ -180,6 +184,7 @@ class OctopusEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         mujoco.mj_resetData(self.model, self.data)
+        self.data.qpos[:] = self.resting_pose
         self.data.qpos[self.joint_qpos] += self.np_random.uniform(-1, 1, self.joint_noise.size) * self.joint_noise
 
         angle = self.np_random.uniform(0, 2 * np.pi)
@@ -256,6 +261,16 @@ class OctopusEnv(gym.Env):
         if self.viewer is not None:
             self.viewer.close()
             self.viewer = None
+
+    def _settle(self):
+        # 3 s with every motor at 0 (no force): the arms fall onto the floor and the springs curl the tips
+        mujoco.mj_resetData(self.model, self.data)
+        mujoco.mj_step(self.model, self.data, nstep=int(3 / self.model.opt.timestep))
+        if self.data.warning[mujoco.mjtWarning.mjWARN_BADQACC].number:
+            raise RuntimeError("the body blew up while settling into its resting pose")
+        pose = self.data.qpos.copy()
+        pose[:2] = 0.0  # back to the center of the floor
+        return pose
 
     def _resting_metabolism(self):
         # watts a resting common octopus burns in 20 C water (Katsanevakis 2005: oxygen use from its weight),

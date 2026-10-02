@@ -44,6 +44,10 @@ DAMPING = 0.05  # seconds: each joint's damping (the tissue's viscosity) is its 
 # of the muscle's full torque. The springs used to take 100%: a relaxed arm couldn't fold back in the water and it
 # held its arms tucked with muscle to swim
 SPRING_SHARE = 0.07
+# MuJoCo's suckers (adhesion) only pull on contacts, and a resting arm hovers ~1 mm above the floor, so a sucker
+# turned on often had nothing to grip. A real sucker protrudes and moulds onto the floor: let it reach 5 mm
+# (margin), without that margin pushing anything away (gap). An estimate: 10 mm made the grip flicker again
+SUCKER_REACH = 0.005
 ARM_ROOT = 0.04  # meters from the mouth to where each arm starts
 ARM_SLOPE = 25  # degrees the arm's base slopes down, so the arm reaches the floor
 # the web joins the arms out to ~25% of the arm's length from the mouth (web depth index 22-29 in O. vulgaris,
@@ -93,13 +97,16 @@ def arm():
         # weighed as the cylinder it stands for: MuJoCo would weigh the whole capsule, and the round ends of
         # neighbouring segments overlap, which made the arms 2.4x too heavy
         mass = TISSUE_DENSITY * np.pi * r ** 2 * length
+        # stretching slides a segment away from the one before it and opened a gap (the arm looked like a chain of
+        # sausages): a drawn-only capsule reaching back over that gap fills it, hidden inside the arm when not stretched
         xml += f"""
 <body name="seg{i}_" pos="{pos}"{tilt} gravcomp="{BUOYANCY}">
   {joint(f"seg{i}_stretch", "slide", "1 0 0", -SHORTEN * length, STRETCH * length, stretch_k)}
   {joint(f"seg{i}_bend_up", "hinge", "0 1 0", -BEND, BEND, bend_k)}
   {joint(f"seg{i}_bend_side", "hinge", "0 0 1", -BEND, BEND, bend_k, rest=curl)}
   {joint(f"seg{i}_twist", "hinge", "1 0 0", -TWIST, TWIST, twist_k)}
-  <geom material="{material}" type="capsule" fromto="0 0 0 {length:.4f} 0 0" size="{r:.5f}" mass="{mass:.5g}"/>
+  <geom material="{material}" type="capsule" fromto="0 0 0 {length:.4f} 0 0" size="{r:.5f}" mass="{mass:.5g}" margin="{SUCKER_REACH}" gap="{SUCKER_REACH}"/>
+  <geom class="visual" material="{material}" type="capsule" fromto="{-STRETCH * length:.4f} 0 0 0 0 0" size="{0.97 * r:.5f}"/>
   <geom class="visual" material="sucker" type="sphere" size="{0.4 * r:.4f}" pos="{length / 2:.4f} 0 {-0.85 * r:.4f}"/>
   <site name="seg{i}_touch" type="capsule" fromto="0 0 0 {length:.4f} 0 0" size="{1.2 * r:.4f}" rgba="0 0 0 0"/>"""
         close += "</body>\n"
@@ -188,8 +195,6 @@ def octopus(skin=""):
       <geom name="mantle" type="ellipsoid" size="0.052 0.0492 0.066" pos="-0.014 0 0.022" euler="0 -28 0"/>
       <!-- the head under the mantle, where the eyes are: only drawn, so its weight isn't counted twice -->
       <geom name="head" class="visual" type="sphere" size="0.048"/>
-      <!-- the web only fills between the arm roots: past them it showed as a plate under the arms, or a stub between them -->
-      <geom name="web" class="visual" type="ellipsoid" size="0.048 0.048 0.014" pos="0 0 -0.024"/>
       <!-- amber eyes half sunk into the sides of the head, with the octopus's horizontal slit pupil -->
       <geom class="visual" material="eye" type="sphere" size="0.0136" pos="0.004 0.04 0.02"/>
       <geom class="visual" material="eye" type="sphere" size="0.0136" pos="0.004 -0.04 0.02"/>

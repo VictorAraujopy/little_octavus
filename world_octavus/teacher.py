@@ -20,15 +20,20 @@ farther than SWIM_BEYOND and it still has breath, and crawls the rest of the way
 eases off (full up to ~32 degrees, none by ~50) while it rights itself: tilted, the jet would roll it further.
 
 Righting, blended in while crawling and swimming: past ~32 degrees of tilt (it feels which way is up), righting takes over from
-holding posture and pushing, fully by ~50 degrees: the arms on the side that is down press their base onto the floor and
-the others rest, until it is upright. Below ~32 degrees it doesn't press at all: on a slightly tilted body, pressing
-"down" folded those arms under it, where they held it tilted (3 arms trapped there 97% of the time after a swim).
+holding posture and pushing, fully by ~50 degrees: the arms on the side that is down straighten their base firmly,
+sticking out on the side it is falling to, and the others rest, until it is upright. Pressing those bases down onto the
+floor instead folded the arms under the body, which then sat on them, tilted: after a messed-up start it lay at 37-50
+degrees for whole episodes (19 of 60 missed); straightening them, 4 of 60 missed, all of them only for lack of time.
+Below ~32 degrees it doesn't right itself at all: on a slightly tilted body, pressing "down" folded those arms under it
+(3 arms trapped there 97% of the time after a swim).
 
 Watch it (on macOS the viewer needs mjpython):  uv run mjpython world_octavus/teacher.py
 It goes through every scenario in turn (listed when it starts); add a scenario's number to repeat only that one.
 A messed-up start is 0-3 s of random commands before the teacher takes over, so it starts tilted, with its arms swept
-or its funnel turned: from there it reached 17/20 targets close, 14/20 up to 3 m and 11/20 at 3-6 m (from a normal
-start: 20/20, 20/20, 19/20). When it misses, it lies tilted with all its arms swept to one side and crawls too slowly.
+or its funnel turned. It reaches every target, from a normal start and after a messed-up one (20 of each per distance:
+close, up to 3 m and 3-6 m). Far targets take up to ~63 s: one breath swims it ~3.5 m and it crawls the rest at ~5.5 cm/s
+(a common octopus averages 9 cm/s, Huffard 2006 citing Wells; here the base stretches at most 0.36 of its length per
+second, Zullo 2022, and pushing harder didn't make it faster), which is why an episode lasts 75 s.
 """
 
 import itertools
@@ -67,6 +72,7 @@ SWIMMING_TILT = -0.5  # a funnel tipped down past this means it is mid-swim (it 
 TAKE_OFF_BREATH, SWIM_BREATH = 0.3, 0.05  # stamina to start a swim, and to keep one going: tired, it doesn't twitch
 TILT = -1.0  # funnel tipped all the way down: the jet pushes level
 RIGHTING_FROM, RIGHTING_RAMP = 0.15, 0.2  # tilt (0 upright, 1 on its side) where righting starts (~32 deg) and how far on it is full (~50 deg)
+STRAIGHTEN = 4.0  # how firmly the arms on the low side straighten their base while righting (POSTURE is the gentle everyday hold)
 
 
 def crawl(obs):
@@ -116,9 +122,13 @@ def how_much_righting(up):
     return np.clip((tilt - RIGHTING_FROM) / RIGHTING_RAMP, 0.0, 1.0)  # how much righting takes over, 0 to 1
 
 
-def presses_down(arm, up):
+def straighten(arms, arm, up):
+    # tilted, an arm on the side that is down straightens its base firmly (see the docstring: pressing it down folded it
+    # under the body); the arms on the other side rest
     low_side = np.arctan2(-up[1], -up[0])  # the side of the body that is down
-    return 1.0 if np.cos(ARM_ANGLES[arm] - low_side) > 0.3 else 0.0  # only the arms on that side press
+    if np.cos(ARM_ANGLES[arm] - low_side) <= 0.3:
+        return 0.0
+    return np.clip(-STRAIGHTEN * arms[arm, 0, BEND_UP], -1.0, 1.0)
 
 
 def keep_alive(arms, commands, up):
@@ -128,7 +138,7 @@ def keep_alive(arms, commands, up):
             commands[arm, 0, muscle] = (1 - righting) * np.clip(-POSTURE * arms[arm, 0, muscle], -0.3, 0.3)
         # the base holds its place; tilted, an arm on the low side presses down instead (the others rest)
         hold = np.clip(-POSTURE * arms[arm, 0, BEND_UP], -0.3, 0.3)
-        commands[arm, 0, BEND_UP] = (1 - righting) * hold + righting * presses_down(arm, up)
+        commands[arm, 0, BEND_UP] = (1 - righting) * hold + righting * straighten(arms, arm, up)
         commands[arm, 1, BEND_SIDE] = sway(arms, arm, 1, BEND_SIDE, MIDDLE_SWAY, GENTLE)
         # pushing fades out too: on its side a push gets it nowhere
         commands[arm, :, STRETCH_COMMAND] *= 1 - righting
@@ -144,7 +154,7 @@ def swim(obs):
     for arm in range(8):
         # only the tips curl in and out: swaying the outer half sideways while jetting slowed it down
         commands[arm, 3, BEND_UP] = sway(arms, arm, 3, BEND_UP, TIP_CURL, GENTLE)
-        commands[arm, 0, BEND_UP] = righting * presses_down(arm, obs[UP])  # tipped over, it rights itself as when crawling
+        commands[arm, 0, BEND_UP] = righting * straighten(arms, arm, obs[UP])  # tipped over, it rights itself as when crawling
     # the funnel points the opposite way from the target, so the jet pushes the body toward it
     action[SIPHON_AIM] = np.arctan2(-target[1], -target[0]) / np.pi  # -1..1 is -180..180 degrees
     action[SIPHON_TILT] = TILT

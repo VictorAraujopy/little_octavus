@@ -59,7 +59,9 @@ class OctopusEnv(gym.Env):
     metadata = {"render_modes": ["human"]}
 
     physics_steps = 5
-    max_steps = 2000
+    # 75 s per episode (was 50): it crawls ~6 cm/s against a real common octopus's 9 (Huffard 2006), so in 75 s it covers
+    # what a real one covers in 50. With 50 s the teacher missed 5 of 40 targets near 6 m, all for lack of time
+    max_steps = 3000
     target_radius = 0.15
     target_distance = (3.0, 6.0)
     target_height = (0.0, 6.0)  # meters above where its head rests; 0 = on the floor

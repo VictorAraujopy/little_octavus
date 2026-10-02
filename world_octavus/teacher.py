@@ -16,23 +16,27 @@ each like a pendulum driven by what it feels: bend one way until a limit, then t
 
 Swimming: the funnel points straight away from the target, so the water leaves that way and pushes the body toward
 it, tipped down so the jet pushes level instead of lifting it off, with the arms trailing behind and their tips curling. It swims while the target is
-farther than SWIM_BEYOND and it still has breath, and crawls the rest of the way.
+farther than SWIM_BEYOND and it still has breath, and crawls the rest of the way. If it tips over mid-swim, the jet
+eases off (full up to ~32 degrees, none by ~50) while it rights itself: tilted, the jet would roll it further.
 
-Righting, blended in while crawling: past ~32 degrees of tilt (it feels which way is up), righting takes over from
+Righting, blended in while crawling and swimming: past ~32 degrees of tilt (it feels which way is up), righting takes over from
 holding posture and pushing, fully by ~50 degrees: the arms on the side that is down press their base onto the floor and
 the others rest, until it is upright. Below ~32 degrees it doesn't press at all: on a slightly tilted body, pressing
 "down" folded those arms under it, where they held it tilted (3 arms trapped there 97% of the time after a swim).
 
 Watch it (on macOS the viewer needs mjpython):  uv run mjpython world_octavus/teacher.py
-Targets as close as the training's right now (its curriculum):  add --close
-Only crawling, no swimming:  add --crawl
+It goes through every scenario in turn (listed when it starts); add a scenario's number to repeat only that one.
+A messed-up start is 0-3 s of random commands before the teacher takes over, so it starts tilted, with its arms swept
+or its funnel turned: from there it reached 17/20 targets close, 14/20 up to 3 m and 11/20 at 3-6 m (from a normal
+start: 20/20, 20/20, 19/20). When it misses, it lies tilted with all its arms swept to one side and crawls too slowly.
 """
 
+import itertools
 import sys
 
 import numpy as np
 
-from world_octavus.environment import CURRICULUM_FILE, OctopusEnv
+from world_octavus.environment import OctopusEnv
 
 # in the observation (see environment.py)
 ARMS = slice(0, 288)  # reshaped to (8 arms, 4 sections, 9): muscle positions, muscle speeds, touch
@@ -107,17 +111,24 @@ def keep_tips_alive(arms, commands):
         commands[arm, 3, BEND_UP] = sway(arms, arm, 3, BEND_UP, TIP_CURL, GENTLE)
 
 
-def keep_alive(arms, commands, up):
+def how_much_righting(up):
     tilt = 1.0 - up[2]  # 0 upright, 1 on its side, 2 upside down
-    righting = np.clip((tilt - RIGHTING_FROM) / RIGHTING_RAMP, 0.0, 1.0)  # how much righting takes over, 0 to 1
+    return np.clip((tilt - RIGHTING_FROM) / RIGHTING_RAMP, 0.0, 1.0)  # how much righting takes over, 0 to 1
+
+
+def presses_down(arm, up):
     low_side = np.arctan2(-up[1], -up[0])  # the side of the body that is down
+    return 1.0 if np.cos(ARM_ANGLES[arm] - low_side) > 0.3 else 0.0  # only the arms on that side press
+
+
+def keep_alive(arms, commands, up):
+    righting = how_much_righting(up)
     for arm in range(8):
         for muscle in (BEND_SIDE, TWIST):
             commands[arm, 0, muscle] = (1 - righting) * np.clip(-POSTURE * arms[arm, 0, muscle], -0.3, 0.3)
         # the base holds its place; tilted, an arm on the low side presses down instead (the others rest)
         hold = np.clip(-POSTURE * arms[arm, 0, BEND_UP], -0.3, 0.3)
-        press = 1.0 if np.cos(ARM_ANGLES[arm] - low_side) > 0.3 else 0.0
-        commands[arm, 0, BEND_UP] = (1 - righting) * hold + righting * press
+        commands[arm, 0, BEND_UP] = (1 - righting) * hold + righting * presses_down(arm, up)
         commands[arm, 1, BEND_SIDE] = sway(arms, arm, 1, BEND_SIDE, MIDDLE_SWAY, GENTLE)
         # pushing fades out too: on its side a push gets it nowhere
         commands[arm, :, STRETCH_COMMAND] *= 1 - righting
@@ -129,13 +140,17 @@ def swim(obs):
     target = obs[TARGET]
     action = np.zeros(163)  # arms trailing behind (holding them open would make a parachute of the web)
     arms, commands = obs[ARMS].reshape(8, 4, 9), action[:160].reshape(8, 4, 5)
+    righting = how_much_righting(obs[UP])
     for arm in range(8):
         # only the tips curl in and out: swaying the outer half sideways while jetting slowed it down
         commands[arm, 3, BEND_UP] = sway(arms, arm, 3, BEND_UP, TIP_CURL, GENTLE)
+        commands[arm, 0, BEND_UP] = righting * presses_down(arm, obs[UP])  # tipped over, it rights itself as when crawling
     # the funnel points the opposite way from the target, so the jet pushes the body toward it
     action[SIPHON_AIM] = np.arctan2(-target[1], -target[0]) / np.pi  # -1..1 is -180..180 degrees
     action[SIPHON_TILT] = TILT
-    action[JET] = 1.0
+    # the jet eases off as it tips over: tilted, it would roll it further. A tilt limit here flickered instead:
+    # jet on, it tipped, jet off, it righted itself, jet on, every 0.3 s
+    action[JET] = 1.0 - righting
     return action
 
 
@@ -149,19 +164,58 @@ def teacher_action(obs):
         return swim(obs)
     return crawl(obs)
 
-if __name__ == "__main__":
-    env = OctopusEnv(render_mode="human", curriculum=False)
-    if "--close" in sys.argv and CURRICULUM_FILE.exists():
-        env.farthest = float(CURRICULUM_FILE.read_text().split()[0])
-    policy = crawl if "--crawl" in sys.argv else teacher_action
-    obs, _ = env.reset()
-    steps = 0
-    while env.viewer is None or env.viewer.is_running():
-        obs, _, terminated, truncated, info = env.step(policy(obs))
+
+MESS_SECONDS = 3.0  # a messed-up start: up to this long of random commands before the teacher takes over
+
+SCENARIOS = [  # what it shows, the farthest target (m), and whether it starts messed up
+    ("close: crawls", 1.5, False),
+    ("middle: swims, then crawls", 3.0, False),
+    ("far: the real task, 3-6 m", 6.0, False),
+    ("close, after a messed-up start", 1.5, True),
+    ("far, after a messed-up start", 6.0, True),
+]
+
+
+def mess_up(env, obs, rng):
+    # random commands for 0 to 3 s: it ends up tilted, with its arms swept or its funnel turned, like a brain still learning
+    steps = rng.integers(0, int(MESS_SECONDS / env.dt))
+    for _ in range(steps):
+        obs, *_ = env.step(rng.uniform(-1.0, 1.0, 163))
+    return obs, steps * env.dt
+
+
+def watching(env):
+    return env.viewer is None or env.viewer.is_running()  # None: the window only opens on the first step
+
+
+def run_scenario(env, rng, name, farthest, messy):
+    env.farthest = farthest
+    obs, _ = env.reset(seed=int(rng.integers(1_000_000)))
+    print(f"{name}: target {np.linalg.norm(obs[TARGET]):.1f} m away", flush=True)
+    if messy:
+        obs, seconds = mess_up(env, obs, rng)
+        print(f"  messed up for {seconds:.1f} s, now the teacher drives", flush=True)
+    steps, done = 0, False
+    while not done and watching(env):
+        obs, _, terminated, truncated, info = env.step(teacher_action(obs))
         steps += 1
-        if terminated or truncated:
-            result = "REACHED the target" if info["reached"] else "time's up"
-            print(f"{result} after {steps * env.dt:.1f}s, {info['distance']:.2f} m from the target")
-            obs, _ = env.reset()
-            steps = 0
+        done = terminated or truncated
+    if done:
+        result = "REACHED the target" if info["reached"] else f"time's up, {info['distance']:.2f} m from the target"
+        print(f"  {result} after {steps * env.dt:.1f} s", flush=True)
+
+
+if __name__ == "__main__":
+    for number, (name, _, _) in enumerate(SCENARIOS, start=1):
+        print(f"{number}. {name}")
+    if len(sys.argv) > 1:
+        chosen = [SCENARIOS[int(sys.argv[1]) - 1]]  # only the scenario with that number
+    else:
+        chosen = SCENARIOS
+    env = OctopusEnv(render_mode="human", curriculum=False)
+    rng = np.random.default_rng()
+    for name, farthest, messy in itertools.cycle(chosen):
+        if not watching(env):
+            break
+        run_scenario(env, rng, name, farthest, messy)
     env.close()

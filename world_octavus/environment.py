@@ -28,7 +28,7 @@ The mantle works in a rhythm: once it runs empty it refills before squeezing aga
 Jetting also stops the octopus's systemic heart, so it tires: 5 s of full jet in total, back after ~13 min of rest.
 
 power is the metabolic cost in watts, what the food pays for: muscles pushing cost 4x their work (25% efficient),
-muscles braking 1/1.2 of it, holding force 10 W per kg of muscle at full force (even when nothing moves),
+muscles braking 1/1.2 of it, holding force up to 100 W per kg of muscle, growing with the square of the effort (even when nothing moves),
 holding suckers nothing, the jet its hydrodynamic power at 25%, plus a common octopus's resting metabolism.
 
 The reward is not decided here: the trainer passes a function reward_fn(info) -> float,
@@ -91,9 +91,10 @@ class OctopusEnv(gym.Env):
     funnel_radius = 0.008  # the siphon capsule in octopus.xml (scaled with the head: the real funnel's width wasn't found)
     muscle_efficiency = 0.25
     braking_efficiency = 1.2
-    # W per kg of muscle held at full force, even without moving (estimate: mammal muscle models use
-    # tens of W/kg at 37 C, and an octopus is cold-blooded, in ~20 C water)
-    holding_rate = 10.0
+    # W per kg of muscle held at full force, even without moving. It grows with the square of the effort: light tone
+    # uses the slow, thrifty fibres and a hard clench recruits the fast, costly ones (an estimate: no octopus value
+    # found). At 10 W/kg in a straight line, holding every muscle at 75% cost ~0.07 per step and it stayed rigid
+    holding_rate = 100.0
     # Hill's force-velocity: a muscle loses force the faster it shortens, and resists harder while being stretched.
     # Fastest shortening, in muscle lengths per second, measured in common octopus arms (Zullo et al. 2022):
     # longitudinal muscles 0.91 (bend, shorten, twist), transverse 0.36 (they squeeze the arm thinner to stretch it)
@@ -335,7 +336,7 @@ class OctopusEnv(gym.Env):
         # an arm muscle's effort is what was commanded: Hill lowers the force it gets while shortening, not the effort
         activation[self.arm_muscles] = self.commanded_activation
         activation = activation[self.muscles]
-        holding = self.holding_rate * (activation * self.muscle_mass[self.muscles]).sum()
+        holding = self.holding_rate * (activation ** 2 * self.muscle_mass[self.muscles]).sum()
         return muscles + holding + self._jet_power() / self.muscle_efficiency + self.basal_power
 
     def _level_up_if_ready(self):

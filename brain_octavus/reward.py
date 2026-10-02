@@ -27,8 +27,11 @@ def reward(info):
     #paying it all from birth, it never learned to move: random moves get nowhere, so the only thing left
     #to improve was energy, and it curled into a ball with the jet off. First learn to get there, then to save
     energy_share = 0.2 + 0.8 * info["curriculum_level"]
+    #except rigidity: holding force always costs in full, from birth (at 20% it cost ~0.09 per step and it stayed rigid)
     watts_per_kg = info["power"] / info["mass"]
-    energy = energy_share * 0.013 * watts_per_kg
+    holding_per_kg = info["holding_power"] / info["mass"]
+    moving_per_kg = watts_per_kg - holding_per_kg
+    energy = 0.013 * (energy_share * moving_per_kg + holding_per_kg)
     #no rule about keeping the tips on the floor: in water swimming is a healthy octopus move
     #(it swam all the time, so that cost was a fixed tax that never changed and taught nothing)
     score = progress - 0.05 * jerk - 0.05 * turn - energy

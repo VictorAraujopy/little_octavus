@@ -33,7 +33,7 @@ holding suckers nothing, the jet its hydrodynamic power at 25%, plus a common oc
 
 The reward is not decided here: the trainer passes a function reward_fn(info) -> float,
 and the environment hands over the facts of each step in the info dict:
-distance, previous_distance, reached, flipped, action, previous_action, vertical_speed, height, spin, power (metabolic watts), mass (kg), tips_touching (0 to 1: arms whose last section touches something), airborne (nothing touching the floor), facing (1 = eyes pointing at the target, -1 = back to it), curriculum_level (0 = targets at the first distance, 1 = at the real 3-6 m), dt.
+distance, previous_distance, reached, flipped, action, previous_action, vertical_speed, height, spin, power (metabolic watts), holding_power (the part of power spent just holding force: rigidity), mass (kg), tips_touching (0 to 1: arms whose last section touches something), airborne (nothing touching the floor), facing (1 = eyes pointing at the target, -1 = back to it), curriculum_level (0 = targets at the first distance, 1 = at the real 3-6 m), dt.
 
 Watch the octopus moving randomly (on macOS the viewer needs mjpython):
     uv run mjpython world_octavus/environment.py
@@ -250,6 +250,7 @@ class OctopusEnv(gym.Env):
         previous_distance, self.distance = self.distance, self._distance_to_target()
         reached = self.distance < self.target_radius
         flipped = self.data.xmat[self.torso][8] < 0
+        power, holding_power = self._metabolic_power()
         info = {
             "distance": self.distance,
             "previous_distance": previous_distance,
@@ -260,7 +261,8 @@ class OctopusEnv(gym.Env):
             "vertical_speed": self.data.qvel[2],
             "height": self.data.xpos[self.torso][2],
             "spin": self.data.qvel[5],
-            "power": self._metabolic_power(),
+            "power": power,
+            "holding_power": holding_power,
             "mass": self.mass,
             # how far the curriculum's distance has gone, 0 to 1 (1 = the real task; also 1 with the curriculum off)
             "curriculum_level": (self.farthest - self.curriculum_first_far) / (self.target_distance[1] - self.curriculum_first_far),
@@ -337,7 +339,8 @@ class OctopusEnv(gym.Env):
         activation[self.arm_muscles] = self.commanded_activation
         activation = activation[self.muscles]
         holding = self.holding_rate * (activation ** 2 * self.muscle_mass[self.muscles]).sum()
-        return muscles + holding + self._jet_power() / self.muscle_efficiency + self.basal_power
+        total = muscles + holding + self._jet_power() / self.muscle_efficiency + self.basal_power
+        return total, holding
 
     def _level_up_if_ready(self):
         # once it reaches at least half of its last 20: first the targets move out, then up; the new level starts a fresh count

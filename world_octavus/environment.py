@@ -33,7 +33,7 @@ holding suckers nothing, the jet its hydrodynamic power at 25%, plus a common oc
 
 The reward is not decided here: the trainer passes a function reward_fn(info) -> float,
 and the environment hands over the facts of each step in the info dict:
-distance, previous_distance, reached, flipped, action, previous_action, vertical_speed, height, spin, power (metabolic watts), holding_power (the part of power spent just holding force: rigidity), mass (kg), tips_touching (0 to 1: arms whose last section touches something), airborne (nothing touching the floor), facing (1 = eyes pointing at the target, -1 = back to it), curriculum_level (0 = targets at the first distance, 1 = at the real 3-6 m), dt.
+distance, previous_distance, reached, flipped, action, previous_action, vertical_speed, height, spin, power (metabolic watts), holding_power (the part of power spent holding force, in any contraction), rigidity (0 to 1: how much each arm muscle has been holding the same command over the last ~second; 0 = relaxed or contracting and releasing), mass (kg), tips_touching (0 to 1: arms whose last section touches something), airborne (nothing touching the floor), facing (1 = eyes pointing at the target, -1 = back to it), curriculum_level (0 = targets at the first distance, 1 = at the real 3-6 m), dt.
 
 Watch the octopus moving randomly (on macOS the viewer needs mjpython):
     uv run mjpython world_octavus/environment.py
@@ -102,6 +102,9 @@ class OctopusEnv(gym.Env):
     transverse_vmax = 0.36
     hill_curvature = 0.25  # how sharply force drops with speed (Hill's a/F0): the classic value, an estimate
     eccentric_max = 1.5  # force while being stretched fast, times the held force (classic 1.5-1.8, an estimate)
+    # rigidity: each arm muscle's command averaged over about this long. Holding the same force keeps the average high;
+    # contracting and releasing (a stride, flailing) averages out near 0 (an estimate, chosen by eye)
+    rigidity_time = 1.0
 
     def __init__(self, reward_fn=None, render_mode=None, xml=XML, curriculum=True):
         self.model = mujoco.MjModel.from_xml_path(str(xml))
@@ -192,6 +195,7 @@ class OctopusEnv(gym.Env):
             else:
                 self.strain_per_tendon[j] = np.mean([segment_radius(i) for i in segments]) / muscle_length
         self.commanded_activation = np.zeros(len(self.arm_muscles))
+        self.held_command = np.zeros(len(self.arm_muscles))
         self.jet = m.actuator("jet").id
         self.max_thrust = m.actuator_gear[self.jet][2]
         self.siphon_qpos = m.jnt_qposadr[m.joint("siphon_aim").id]
@@ -229,6 +233,7 @@ class OctopusEnv(gym.Env):
         self.stamina = 1.0
         self.relaxed_time = 0.0
         self.refilling = False
+        self.held_command[:] = 0.0
         return self._observe(), {}
 
     def step(self, action):
@@ -238,6 +243,8 @@ class OctopusEnv(gym.Env):
         low, high = self.model.actuator_ctrlrange.T
         wanted = action[self.action_of_motor]
         self.data.ctrl[:] = np.where(wanted >= 0, wanted * high, wanted * -low)
+        # each arm muscle's command, -1 to 1, averaged over the last ~second (for the rigidity in the info dict)
+        self.held_command += (wanted[self.arm_muscles] - self.held_command) * self.dt / self.rigidity_time
         self._squirt()
         commanded = self.data.ctrl[self.arm_muscles].copy()
         self.commanded_activation = np.abs(commanded) / self.max_force[self.arm_muscles]
@@ -263,6 +270,7 @@ class OctopusEnv(gym.Env):
             "spin": self.data.qvel[5],
             "power": power,
             "holding_power": holding_power,
+            "rigidity": float(np.mean(self.held_command ** 2)),
             "mass": self.mass,
             # how far the curriculum's distance has gone, 0 to 1 (1 = the real task; also 1 with the curriculum off)
             "curriculum_level": (self.farthest - self.curriculum_first_far) / (self.target_distance[1] - self.curriculum_first_far),

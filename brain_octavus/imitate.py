@@ -31,7 +31,9 @@ def copy_error(x, y):
     return (((distribuition.mean - y) / size) ** 2).mean() #mean = what the brain believes, without the draw
 
 
-for epoch in range(100): #how many times it studies the whole recording (with 20 the tip curls came out at a third)
+#how many times it studies the whole recording: 30 over 500 thousand steps adjust 1.5x more than the 100 over
+#100 thousand that copied the tip curls (20 over 100 thousand left them at a third)
+for epoch in range(30):
     errors = []
     for chunk in torch.randperm(cut).split(minibatch_size):
         error = copy_error(study_xs[chunk], study_ys[chunk])

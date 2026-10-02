@@ -182,6 +182,7 @@ SCENARIOS = [  # what it shows, the farthest target (m), and whether it starts m
     ("middle: swims, then crawls", 3.0, False),
     ("far: the real task, 3-6 m", 6.0, False),
     ("close, after a messed-up start", 1.5, True),
+    ("middle, after a messed-up start", 3.0, True),
     ("far, after a messed-up start", 6.0, True),
 ]
 
@@ -198,16 +199,17 @@ def watching(env):
     return env.viewer is None or env.viewer.is_running()  # None: the window only opens on the first step
 
 
-def run_scenario(env, rng, name, farthest, messy):
+def run_scenario(env, rng, name, farthest, messy, policy=teacher_action):
+    # policy: who drives, the teacher by default (watch_octopus.py --scenarios passes the brain)
     env.farthest = farthest
     obs, _ = env.reset(seed=int(rng.integers(1_000_000)))
     print(f"{name}: target {np.linalg.norm(obs[TARGET]):.1f} m away", flush=True)
     if messy:
         obs, seconds = mess_up(env, obs, rng)
-        print(f"  messed up for {seconds:.1f} s, now the teacher drives", flush=True)
+        print(f"  messed up for {seconds:.1f} s, now it drives", flush=True)
     steps, done = 0, False
     while not done and watching(env):
-        obs, _, terminated, truncated, info = env.step(teacher_action(obs))
+        obs, _, terminated, truncated, info = env.step(policy(obs))
         steps += 1
         done = terminated or truncated
     if done:

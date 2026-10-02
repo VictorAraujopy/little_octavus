@@ -38,7 +38,12 @@ BUOYANCY = 1025.0 / TISSUE_DENSITY  # 0.967: the water holds this much of its we
 # the head carries the mantle, a sac full of sea water (which weighs nothing in water), so it is almost neutral:
 # only the organs pull it down a little (estimate). With the arms' buoyancy, lying sideways it nosedived
 MANTLE_BUOYANCY = 0.99
-DAMPING = 0.05  # seconds: each spring's damping is its stiffness times this, so the arm doesn't ring
+DAMPING = 0.05  # seconds: each joint's damping (the tissue's viscosity) is its muscle stiffness times this, so it doesn't ring
+# a relaxed octopus arm is floppy: its longitudinal tissue resists stretch with ~10-40 kPa (O. rubescens, JEB 2024)
+# against ~107 kPa of active muscle stress (Zullo et al. 2022), so bending a segment 45 degrees relaxed takes ~3-11%
+# of the muscle's full torque. The springs used to take 100%: a relaxed arm couldn't fold back in the water and it
+# held its arms tucked with muscle to swim
+SPRING_SHARE = 0.07
 ARM_ROOT = 0.04  # meters from the mouth to where each arm starts
 ARM_SLOPE = 25  # degrees the arm's base slopes down, so the arm reaches the floor
 # the web joins the arms out to ~25% of the arm's length from the mouth (web depth index 22-29 in O. vulgaris,
@@ -60,11 +65,13 @@ def section_of(i):
     return i * SECTIONS // SEGMENTS
 
 
-def joint(name, kind, axis, low, high, stiffness, rest=0.0):
+def joint(name, kind, axis, low, high, muscle_stiffness, rest=0.0):
+    # muscle_stiffness: the spring the muscle's full force would take to its limit. The relaxed tissue is only
+    # SPRING_SHARE of it (a floppy arm); its damping (the tissue's viscosity) stays at the muscle's scale
     # rest: where the spring pulls the joint back to when no muscle works (springref)
     kind_attr = ' type="slide"' if kind == "slide" else ""
     return (f'<joint name="{name}"{kind_attr} axis="{axis}" range="{low:.4g} {high:.4g}" springref="{rest:.4g}" '
-            f'stiffness="{stiffness:.4g}" damping="{stiffness * DAMPING:.4g}"/>')
+            f'stiffness="{SPRING_SHARE * muscle_stiffness:.4g}" damping="{muscle_stiffness * DAMPING:.4g}"/>')
 
 
 def arm():
@@ -218,10 +225,10 @@ def octopus(skin=""):
   <actuator>
 {actuators}    <position name="siphon_aim" joint="siphon_aim" kp="8" kv="0.3" forcerange="-4 4" inheritrange="1"/>
     <position name="siphon_tilt" joint="siphon_tilt" kp="8" kv="0.3" forcerange="-4 4" inheritrange="1"/>
-    <!-- up to 40 N, set by how it swims: mantle first with the arms spread, like a common octopus (Huffard 2006), its top
-         speed is ~1 m/s, the measured one (Wells, via Huffard 2006); with no drag at all on the arms it would reach 1.3 m/s.
+    <!-- up to 32 N, set by how it swims: mantle first with the arms relaxed, like a common octopus (Huffard 2006), its top
+         speed is ~1 m/s, the measured one (Wells, via Huffard 2006). It was 40 N with stiff arm springs; floppy arms drag less.
          The environment stops it when the mantle is empty -->
-    <motor name="jet" site="jet" ctrlrange="0 1" gear="0 0 40 0 0 0"/>
+    <motor name="jet" site="jet" ctrlrange="0 1" gear="0 0 32 0 0 0"/>
   </actuator>
 
   <sensor>
